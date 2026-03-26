@@ -1,13 +1,16 @@
 import Fastify from 'fastify';
 import { registerRoutes } from './register-routes.js';
 import type { AppEnv } from '../infra/config/app-env.js';
+import type { GitHubAppEnv } from '../infra/config/github-app-env.js';
 import { createLogger } from '../infra/logger/create-logger.js';
 import { createErrorHandler } from '../infra/http/error-handler.js';
+import { createGitHubAppBoundary } from '../modules/github/github-app.boundary.js';
 import { StaticHealthRepository } from '../modules/health/health.repository.js';
 import { HealthService } from '../modules/health/health.service.js';
 
 export interface CreateServerOptions {
   env: AppEnv;
+  githubConfig?: GitHubAppEnv | null;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -15,10 +18,12 @@ export const createServer = (options: CreateServerOptions) => {
     logger: createLogger(options.env.LOG_LEVEL),
   });
 
+  const githubBoundary = createGitHubAppBoundary(options.githubConfig ?? null);
   const healthRepository = new StaticHealthRepository({
     environment: options.env.NODE_ENV,
   });
   const healthService = new HealthService({
+    githubBoundary,
     repository: healthRepository,
   });
 

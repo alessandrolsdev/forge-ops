@@ -13,6 +13,7 @@ describe('createServer', () => {
         PORT: 3333,
         LOG_LEVEL: 'silent',
       },
+      githubConfig: null,
     });
 
     const response = await server.inject({
@@ -24,6 +25,11 @@ describe('createServer', () => {
     expect(response.json()).toMatchObject({
       status: 'ok',
       environment: 'test',
+      integrations: {
+        github: {
+          configured: false,
+        },
+      },
     });
 
     await server.close();
@@ -36,6 +42,7 @@ describe('createServer', () => {
         PORT: 3333,
         LOG_LEVEL: 'silent',
       },
+      githubConfig: null,
     });
 
     const response = await server.inject({
