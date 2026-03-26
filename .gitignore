@@ -1,0 +1,17 @@
+node_modules/
+.pnpm-store/
+.corepack/
+.turbo/
+dist/
+coverage/
+.next/
+.cache/
+.env
+.env.local
+.env.*.local
+!.env.example
+backend/generated/
+backend/node_modules/
+frontend/node_modules/
+packages/*/node_modules/
+*.tsbuildinfo
