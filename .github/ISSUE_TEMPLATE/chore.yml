@@ -1,0 +1,28 @@
+name: Chore
+description: Track repository, tooling, or configuration work.
+title: '[chore] '
+labels:
+  - chore
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Why does this repository task matter now?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List what will be added or changed.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      value: |
+        - [ ] Change is documented
+        - [ ] Quality gates remain green
+        - [ ] No product behavior leaked into the task
