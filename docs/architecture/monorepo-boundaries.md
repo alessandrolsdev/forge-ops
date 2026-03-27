@@ -14,6 +14,7 @@
 - `backend` must isolate providers under `src/infra` or module-specific `providers`.
 - Providers expose internal interfaces so integrations can be mocked in tests.
 - HTTP contract ownership and extraction rules are documented in `docs/architecture/http-contract-strategy.md`.
+- Authentication and authorization boundaries are documented in `docs/architecture/auth-boundary.md`.
 
 ## Expansion Triggers
 - Extract a package only when at least two workspaces depend on the same artifact.
