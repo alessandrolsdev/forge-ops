@@ -22,8 +22,16 @@ export const registerHealthRoutes = (
   app: ForgeOpsFastifyInstance,
   healthService: HealthRouteService,
 ): void => {
-  app.get<HealthRouteGeneric>('/api/v1/health', async (request: HealthRouteRequest) => {
-    healthQuerySchema.parse(request.query);
-    return healthService.getSnapshot();
-  });
+  app.get<HealthRouteGeneric>(
+    '/api/v1/health',
+    {
+      config: {
+        access: 'public',
+      },
+    },
+    async (request: HealthRouteRequest) => {
+      healthQuerySchema.parse(request.query);
+      return healthService.getSnapshot();
+    },
+  );
 };
