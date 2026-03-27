@@ -6,6 +6,7 @@ import type {
 } from 'fastify';
 import type { Logger } from 'pino';
 import type { HealthService } from '../modules/health/health.service.js';
+import { registerAuthReferenceRoutes } from '../modules/auth/auth-reference.controller.js';
 import { registerHealthRoutes } from '../modules/health/health.controller.js';
 
 interface RegisterRoutesOptions {
@@ -24,4 +25,5 @@ export const registerRoutes = (
   options: RegisterRoutesOptions,
 ): void => {
   registerHealthRoutes(app, options.healthService);
+  registerAuthReferenceRoutes(app);
 };
