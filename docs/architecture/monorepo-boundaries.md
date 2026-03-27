@@ -13,8 +13,8 @@
 - `frontend` may depend on public backend HTTP endpoints only.
 - `backend` must isolate providers under `src/infra` or module-specific `providers`.
 - Providers expose internal interfaces so integrations can be mocked in tests.
+- HTTP contract ownership and extraction rules are documented in `docs/architecture/http-contract-strategy.md`.
 
 ## Expansion Triggers
 - Extract a package only when at least two workspaces depend on the same artifact.
 - Write an ADR before introducing a new shared runtime package or cross-cutting infrastructure.
-
