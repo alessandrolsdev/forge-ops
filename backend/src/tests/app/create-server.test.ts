@@ -18,7 +18,7 @@ describe('createServer', () => {
 
     const response = await server.inject({
       method: 'GET',
-      url: '/api/v1/health',
+      url: '/api/v1/health?verbose=true',
     });
 
     expect(response.statusCode).toBe(200);
