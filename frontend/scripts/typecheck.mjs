@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { getNextTypegenReadyFiles, waitForFiles } from './typecheck-lib.mjs';
 
 const run = (command, args) =>
   new Promise((resolve, reject) => {
@@ -22,44 +22,9 @@ const run = (command, args) =>
 const localBin = (name) =>
   path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? `${name}.cmd` : name);
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const waitForFiles = async (files) => {
-  const timeoutAt = Date.now() + 5_000;
-
-  while (Date.now() < timeoutAt) {
-    const results = await Promise.all(
-      files.map(async (file) => {
-        try {
-          await access(file);
-          return true;
-        } catch {
-          return false;
-        }
-      }),
-    );
-
-    if (results.every(Boolean)) {
-      return;
-    }
-
-    await wait(100);
-  }
-
-  throw new Error('Next route types were not generated in time.');
-};
-
-const expectedTypeFiles = [
-  path.join(process.cwd(), '.next', 'types', 'app', 'layout.ts'),
-  path.join(process.cwd(), '.next', 'types', 'app', 'page.ts'),
-  path.join(process.cwd(), '.next', 'types', 'app', 'repositories', 'page.ts'),
-  path.join(process.cwd(), '.next', 'types', 'app', 'settings', 'page.ts'),
-  path.join(process.cwd(), '.next', 'types', 'cache-life.d.ts'),
-];
-
 const main = async () => {
   await run(localBin('next'), ['typegen']);
-  await waitForFiles(expectedTypeFiles);
+  await waitForFiles(getNextTypegenReadyFiles(process.cwd()));
   await run(localBin('tsc'), ['--project', 'tsconfig.json', '--noEmit']);
 };
 
