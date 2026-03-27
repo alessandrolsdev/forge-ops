@@ -7,3 +7,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Repository {
+  id            String   @id @default(cuid())
+  githubRepoId  String   @unique
+  owner         String
+  name          String
+  fullName      String   @unique
+  defaultBranch String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([owner, name])
+}
+
