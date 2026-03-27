@@ -2,12 +2,13 @@
 
 ## Pull Request Policy
 - Require pull requests before merging into `main`.
-- Require `lint`, `typecheck`, and `test` to pass before merge.
+- Require `actionlint`, `lint`, `typecheck`, and `test` to pass before merge.
 - Require at least one human review once the team grows beyond a single maintainer.
 - Block force pushes and branch deletions on `main`.
 - Keep Codex review as advisory until the team validates its signal quality on this repository.
 
 ## Status Checks
+- `actionlint`
 - `lint`
 - `typecheck`
 - `test`
@@ -17,7 +18,8 @@
 - Use `pull_request`, not `pull_request_target`, for workflows that react to repository code changes.
 - Do not expose secrets to fork pull requests.
 - Set `timeout-minutes` and `concurrency` for every workflow.
-- Prefer first-party actions and pin third-party actions by SHA when introduced.
+- Pin workflow actions by commit SHA instead of floating tags.
+- Prefer first-party actions when possible and validate workflow files with `actionlint`.
 - Keep Codex review limited to PR comments or reviews; it must not mutate repository contents.
 
 ## Codex Review Policy
