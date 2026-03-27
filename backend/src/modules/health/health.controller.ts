@@ -1,22 +1,28 @@
+import type { FastifyRequest, RouteGenericInterface } from 'fastify';
 import { z } from 'zod';
-import type { HealthService } from './health.service.js';
+import type { ForgeOpsFastifyInstance } from '../../app/register-routes.js';
+import type { HealthService, HealthSnapshot } from './health.service.js';
 
-interface RouteRegistrar {
-  get(path: string, ...args: readonly unknown[]): unknown;
+interface HealthRouteGeneric extends RouteGenericInterface {
+  Querystring: {
+    verbose?: 'true' | 'false';
+  };
+  Reply: HealthSnapshot;
 }
 
+export type HealthRouteService = Pick<HealthService, 'getSnapshot'>;
+
 const healthQuerySchema = z.object({
-  verbose: z
-    .union([z.literal('true'), z.literal('false')])
-    .optional()
-    .transform((value) => value === 'true'),
+  verbose: z.union([z.literal('true'), z.literal('false')]).optional(),
 });
 
+type HealthRouteRequest = FastifyRequest<HealthRouteGeneric>;
+
 export const registerHealthRoutes = (
-  app: RouteRegistrar,
-  healthService: HealthService,
+  app: ForgeOpsFastifyInstance,
+  healthService: HealthRouteService,
 ): void => {
-  app.get('/api/v1/health', async (request: { query: Record<string, unknown> }) => {
+  app.get<HealthRouteGeneric>('/api/v1/health', async (request: HealthRouteRequest) => {
     healthQuerySchema.parse(request.query);
     return healthService.getSnapshot();
   });
