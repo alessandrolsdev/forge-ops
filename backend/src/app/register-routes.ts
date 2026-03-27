@@ -1,3 +1,10 @@
+import type {
+  FastifyInstance,
+  RawReplyDefaultExpression,
+  RawRequestDefaultExpression,
+  RawServerDefault,
+} from 'fastify';
+import type { Logger } from 'pino';
 import type { HealthService } from '../modules/health/health.service.js';
 import { registerHealthRoutes } from '../modules/health/health.controller.js';
 
@@ -5,12 +12,15 @@ interface RegisterRoutesOptions {
   healthService: HealthService;
 }
 
-interface RouteRegistrar {
-  get(path: string, ...args: readonly unknown[]): unknown;
-}
+export type ForgeOpsFastifyInstance = FastifyInstance<
+  RawServerDefault,
+  RawRequestDefaultExpression<RawServerDefault>,
+  RawReplyDefaultExpression<RawServerDefault>,
+  Logger
+>;
 
 export const registerRoutes = (
-  app: RouteRegistrar,
+  app: ForgeOpsFastifyInstance,
   options: RegisterRoutesOptions,
 ): void => {
   registerHealthRoutes(app, options.healthService);
