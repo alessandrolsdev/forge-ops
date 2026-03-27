@@ -13,6 +13,7 @@ describe('createServer', () => {
         PORT: 3333,
         LOG_LEVEL: 'silent',
       },
+      authConfig: null,
       githubConfig: null,
     });
 
@@ -42,6 +43,7 @@ describe('createServer', () => {
         PORT: 3333,
         LOG_LEVEL: 'silent',
       },
+      authConfig: null,
       githubConfig: null,
     });
 
@@ -57,6 +59,22 @@ describe('createServer', () => {
         message: 'Invalid input',
       },
     });
+
+    await server.close();
+  });
+
+  it('should decorate requests with an operator principal context slot', async () => {
+    const server = createServer({
+      env: {
+        NODE_ENV: 'test',
+        PORT: 3333,
+        LOG_LEVEL: 'silent',
+      },
+      authConfig: null,
+      githubConfig: null,
+    });
+
+    expect(server.hasRequestDecorator('operatorPrincipal')).toBe(true);
 
     await server.close();
   });
