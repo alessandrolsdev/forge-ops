@@ -1,0 +1,19 @@
+{
+  "name": "forge-ops",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "node scripts/run-workspaces.mjs build",
+    "dev": "node scripts/run-workspaces.mjs dev",
+    "lint": "node scripts/run-workspaces.mjs lint",
+    "typecheck": "node scripts/run-workspaces.mjs typecheck",
+    "test": "node scripts/run-workspaces.mjs test",
+    "format": "node scripts/run-bin.mjs prettier --write .",
+    "format:check": "node scripts/run-bin.mjs prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3"
+  }
+}
