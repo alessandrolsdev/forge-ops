@@ -7,7 +7,10 @@ import { createAuthGuard } from '../infra/http/auth-guard.js';
 import { createLogger } from '../infra/logger/create-logger.js';
 import { createErrorHandler } from '../infra/http/error-handler.js';
 import { createPrismaClient } from '../infra/persistence/prisma-client.js';
-import { createGitHubAppBoundary } from '../modules/github/github-app.boundary.js';
+import {
+  createGitHubAppBoundary,
+  type GitHubAppBoundary,
+} from '../modules/github/github-app.boundary.js';
 import { StaticHealthRepository } from '../modules/health/health.repository.js';
 import { HealthService } from '../modules/health/health.service.js';
 import { PrismaRepositoryRepository } from '../modules/repository-registry/repository.prisma-repository.js';
@@ -20,6 +23,7 @@ export interface CreateServerOptions {
   authConfig?: OperatorAuthEnv | null;
   authVerifier?: OperatorAuthVerifier | null;
   githubConfig?: GitHubAppEnv | null;
+  githubBoundary?: GitHubAppBoundary;
   repositoryRegistryRepository?: RepositoryRepository;
 }
 
@@ -40,7 +44,8 @@ export const createServer = (options: CreateServerOptions) => {
   const prismaClient = options.repositoryRegistryRepository
     ? null
     : createPrismaClient();
-  const githubBoundary = createGitHubAppBoundary(options.githubConfig ?? null);
+  const githubBoundary =
+    options.githubBoundary ?? createGitHubAppBoundary(options.githubConfig ?? null);
   const healthRepository = new StaticHealthRepository({
     environment: options.env.NODE_ENV,
   });
@@ -53,6 +58,7 @@ export const createServer = (options: CreateServerOptions) => {
   });
   const repositoryService = new RepositoryService({
     repository: repositoryRegistryRepository,
+    githubBoundary,
   });
 
   if (prismaClient) {
