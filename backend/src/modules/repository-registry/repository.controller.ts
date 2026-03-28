@@ -126,6 +126,7 @@ export const registerRepositoryRegistryRoutes = (
     {
       config: {
         access: 'protected',
+        requiredCapability: 'repositories:write',
       },
     },
     async (request, reply) => {
