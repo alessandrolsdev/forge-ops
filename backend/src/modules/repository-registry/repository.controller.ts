@@ -1,6 +1,7 @@
 import type { RouteGenericInterface } from 'fastify';
 import { z } from 'zod';
 import type { ForgeOpsFastifyInstance } from '../../app/register-routes.js';
+import type { GitHubInstallationRepository } from '../github/github-app.boundary.js';
 import type {
   CreateRepositoryInput,
   Repository,
@@ -41,6 +42,21 @@ interface CreateRepositoryRoute extends RouteGenericInterface {
   };
 }
 
+interface InstallationRepositoryResponse {
+  githubRepoId: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+}
+
+interface DiscoverRepositoriesRoute extends RouteGenericInterface {
+  Reply: {
+    repositories: InstallationRepositoryResponse[];
+  };
+}
+
 const toRepositoryResponse = (repository: Repository): RepositoryResponse => {
   return {
     id: repository.id,
@@ -55,10 +71,40 @@ const toRepositoryResponse = (repository: Repository): RepositoryResponse => {
   };
 };
 
+const toInstallationRepositoryResponse = (
+  repository: GitHubInstallationRepository,
+): InstallationRepositoryResponse => {
+  return {
+    githubRepoId: repository.githubRepoId,
+    owner: repository.owner,
+    name: repository.name,
+    fullName: repository.fullName,
+    defaultBranch: repository.defaultBranch,
+    isPrivate: repository.isPrivate,
+  };
+};
+
 export const registerRepositoryRegistryRoutes = (
   app: ForgeOpsFastifyInstance,
   repositoryService: RepositoryService,
 ): void => {
+  app.get<DiscoverRepositoriesRoute>(
+    '/api/v1/repositories/discovery',
+    {
+      config: {
+        access: 'protected',
+      },
+    },
+    async () => {
+      const repositories =
+        await repositoryService.listInstallationRepositories();
+
+      return {
+        repositories: repositories.map(toInstallationRepositoryResponse),
+      };
+    },
+  );
+
   app.get<ListRepositoriesRoute>(
     '/api/v1/repositories',
     {

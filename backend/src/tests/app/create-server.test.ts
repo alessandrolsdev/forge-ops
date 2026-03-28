@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer } from '../../app/create-server.js';
+import { GitHubRepositoryDiscoveryError } from '../../modules/github/github-app.errors.js';
 import { createOperatorPrincipal } from '../../shared/auth/operator-principal.js';
 import type {
   CreateRepositoryInput,
   Repository,
 } from '../../modules/repository-registry/repository.entity.js';
+import type { GitHubInstallationRepository } from '../../modules/github/github-app.boundary.js';
 
 const buildRepository = (
   overrides: Partial<Repository> = {},
@@ -38,9 +40,25 @@ const buildCreateRepositoryInput = (
   };
 };
 
+const buildInstallationRepository = (
+  overrides: Partial<GitHubInstallationRepository> = {},
+): GitHubInstallationRepository => {
+  return {
+    githubRepoId: '123456789',
+    owner: 'forgeops',
+    name: 'backend',
+    fullName: 'forgeops/backend',
+    defaultBranch: 'main',
+    isPrivate: true,
+    ...overrides,
+  };
+};
+
 const createProtectedServer = (overrides?: {
   repositories?: Repository[];
   createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
+  installationRepositories?: GitHubInstallationRepository[];
+  installationDiscoveryError?: Error;
 }) => {
   const repositories = overrides?.repositories ?? [];
 
@@ -67,6 +85,26 @@ const createProtectedServer = (overrides?: {
         }),
     },
     githubConfig: null,
+    githubBoundary: {
+      mode: 'github-app',
+      configured: true,
+      getStatus: () => ({
+        mode: 'github-app',
+        configured: true,
+        appId: '12****56',
+        installationId: '78****10',
+        webhookConfigured: true,
+      }),
+      assertConfigured: () => undefined,
+      listInstallationRepositories: async () => {
+        if (overrides?.installationDiscoveryError) {
+          throw overrides.installationDiscoveryError;
+        }
+
+        return overrides?.installationRepositories ?? [];
+      },
+      listRepositoryWorkflows: async () => [],
+    },
     repositoryRegistryRepository: {
       list: async () => repositories,
       create:
@@ -499,6 +537,67 @@ describe('createServer', () => {
       error: {
         code: 'authentication_required',
         message: 'Authentication is required.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should list discoverable installation repositories for an authenticated operator', async () => {
+    const server = createProtectedServer({
+      installationRepositories: [
+        buildInstallationRepository(),
+        buildInstallationRepository({
+          githubRepoId: '987654321',
+          name: 'frontend',
+          fullName: 'forgeops/frontend',
+          isPrivate: false,
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/discovery',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      repositories: [
+        buildInstallationRepository(),
+        buildInstallationRepository({
+          githubRepoId: '987654321',
+          name: 'frontend',
+          fullName: 'forgeops/frontend',
+          isPrivate: false,
+        }),
+      ],
+    });
+
+    await server.close();
+  });
+
+  it('should return a safe error when repository discovery fails', async () => {
+    const server = createProtectedServer({
+      installationDiscoveryError: new GitHubRepositoryDiscoveryError(),
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/discovery',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'github_repository_discovery_unavailable',
+        message: 'GitHub repository discovery is currently unavailable.',
       },
     });
 
