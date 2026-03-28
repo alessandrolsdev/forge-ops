@@ -6,9 +6,13 @@ import type { GitHubAppEnv } from '../infra/config/github-app-env.js';
 import { createAuthGuard } from '../infra/http/auth-guard.js';
 import { createLogger } from '../infra/logger/create-logger.js';
 import { createErrorHandler } from '../infra/http/error-handler.js';
+import { createPrismaClient } from '../infra/persistence/prisma-client.js';
 import { createGitHubAppBoundary } from '../modules/github/github-app.boundary.js';
 import { StaticHealthRepository } from '../modules/health/health.repository.js';
 import { HealthService } from '../modules/health/health.service.js';
+import { PrismaRepositoryRepository } from '../modules/repository-registry/repository.prisma-repository.js';
+import type { RepositoryRepository } from '../modules/repository-registry/repository.repository.js';
+import { RepositoryService } from '../modules/repository-registry/repository.service.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 export interface CreateServerOptions {
@@ -16,6 +20,7 @@ export interface CreateServerOptions {
   authConfig?: OperatorAuthEnv | null;
   authVerifier?: OperatorAuthVerifier | null;
   githubConfig?: GitHubAppEnv | null;
+  repositoryRegistryRepository?: RepositoryRepository;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -32,18 +37,34 @@ export const createServer = (options: CreateServerOptions) => {
     }),
   );
 
+  const prismaClient = options.repositoryRegistryRepository
+    ? null
+    : createPrismaClient();
   const githubBoundary = createGitHubAppBoundary(options.githubConfig ?? null);
   const healthRepository = new StaticHealthRepository({
     environment: options.env.NODE_ENV,
   });
+  const repositoryRegistryRepository =
+    options.repositoryRegistryRepository ??
+    new PrismaRepositoryRepository(prismaClient!.repository);
   const healthService = new HealthService({
     githubBoundary,
     repository: healthRepository,
   });
+  const repositoryService = new RepositoryService({
+    repository: repositoryRegistryRepository,
+  });
+
+  if (prismaClient) {
+    app.addHook('onClose', async () => {
+      await prismaClient.$disconnect();
+    });
+  }
 
   app.setErrorHandler(createErrorHandler(app.log));
   registerRoutes(app, {
     healthService,
+    repositoryService,
   });
 
   return app;

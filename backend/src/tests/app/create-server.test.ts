@@ -1,6 +1,88 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer } from '../../app/create-server.js';
 import { createOperatorPrincipal } from '../../shared/auth/operator-principal.js';
+import type {
+  CreateRepositoryInput,
+  Repository,
+} from '../../modules/repository-registry/repository.entity.js';
+
+const buildRepository = (
+  overrides: Partial<Repository> = {},
+): Repository => {
+  const createdAt = new Date('2026-03-27T16:45:00.000Z');
+
+  return {
+    id: 'repo_123',
+    githubRepoId: '123456789',
+    owner: 'forgeops',
+    name: 'backend',
+    fullName: 'forgeops/backend',
+    defaultBranch: 'main',
+    isActive: true,
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  };
+};
+
+const buildCreateRepositoryInput = (
+  overrides: Partial<CreateRepositoryInput> = {},
+): CreateRepositoryInput => {
+  return {
+    githubRepoId: '123456789',
+    owner: 'forgeops',
+    name: 'backend',
+    fullName: 'forgeops/backend',
+    defaultBranch: 'main',
+    ...overrides,
+  };
+};
+
+const createProtectedServer = (overrides?: {
+  repositories?: Repository[];
+  createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
+}) => {
+  const repositories = overrides?.repositories ?? [];
+
+  return createServer({
+    env: {
+      NODE_ENV: 'test',
+      PORT: 3333,
+      LOG_LEVEL: 'silent',
+    },
+    authConfig: {
+      issuer: 'https://forgeops.example.com',
+      audience: 'forgeops-api',
+      verifierSource: {
+        type: 'shared-secret',
+        sharedSecret: 'secret',
+      },
+    },
+    authVerifier: {
+      verify: async ({ token }) =>
+        createOperatorPrincipal({
+          subject: `operator:${token}`,
+          email: 'operator@forgeops.dev',
+          capabilities: ['repositories:read', 'repositories:write'],
+        }),
+    },
+    githubConfig: null,
+    repositoryRegistryRepository: {
+      list: async () => repositories,
+      create:
+        overrides?.createRepository ??
+        (async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          })),
+    },
+  });
+};
 
 describe('createServer', () => {
   afterEach(async () => {
@@ -17,6 +99,18 @@ describe('createServer', () => {
       authConfig: null,
       authVerifier: null,
       githubConfig: null,
+      repositoryRegistryRepository: {
+        list: async () => [],
+        create: async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          }),
+      },
     });
 
     const response = await server.inject({
@@ -48,6 +142,18 @@ describe('createServer', () => {
       authConfig: null,
       authVerifier: null,
       githubConfig: null,
+      repositoryRegistryRepository: {
+        list: async () => [],
+        create: async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          }),
+      },
     });
 
     const response = await server.inject({
@@ -76,6 +182,18 @@ describe('createServer', () => {
       authConfig: null,
       authVerifier: null,
       githubConfig: null,
+      repositoryRegistryRepository: {
+        list: async () => [],
+        create: async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          }),
+      },
     });
 
     expect(server.hasRequestDecorator('operatorPrincipal')).toBe(true);
@@ -104,6 +222,18 @@ describe('createServer', () => {
         },
       },
       githubConfig: null,
+      repositoryRegistryRepository: {
+        list: async () => [],
+        create: async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          }),
+      },
     });
 
     const response = await server.inject({
@@ -132,6 +262,18 @@ describe('createServer', () => {
       authConfig: null,
       authVerifier: null,
       githubConfig: null,
+      repositoryRegistryRepository: {
+        list: async () => [],
+        create: async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          }),
+      },
     });
 
     const response = await server.inject({
@@ -177,6 +319,18 @@ describe('createServer', () => {
           }),
       },
       githubConfig: null,
+      repositoryRegistryRepository: {
+        list: async () => [],
+        create: async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          }),
+      },
     });
 
     const response = await server.inject({
@@ -222,6 +376,18 @@ describe('createServer', () => {
         },
       },
       githubConfig: null,
+      repositoryRegistryRepository: {
+        list: async () => [],
+        create: async (input) =>
+          buildRepository({
+            githubRepoId: input.githubRepoId,
+            owner: input.owner,
+            name: input.name,
+            fullName: input.fullName,
+            defaultBranch: input.defaultBranch,
+            isActive: input.isActive ?? true,
+          }),
+      },
     });
 
     const response = await server.inject({
@@ -237,6 +403,102 @@ describe('createServer', () => {
       error: {
         code: 'authentication_required',
         message: 'Authentication failed.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should list repositories for an authenticated operator', async () => {
+    const server = createProtectedServer({
+      repositories: [],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      repositories: [],
+    });
+
+    await server.close();
+  });
+
+  it('should reject invalid repository payloads before service execution', async () => {
+    const server = createProtectedServer();
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+      payload: {
+        githubRepoId: '',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'validation_error',
+        message:
+          'String must contain at least 1 character(s); Required; Required; Required; Required',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should create a repository for an authenticated operator', async () => {
+    const server = createProtectedServer();
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+      payload: buildCreateRepositoryInput(),
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      repository: {
+        id: 'repo_123',
+        githubRepoId: '123456789',
+        owner: 'forgeops',
+        name: 'backend',
+        fullName: 'forgeops/backend',
+        defaultBranch: 'main',
+        isActive: true,
+        createdAt: '2026-03-27T16:45:00.000Z',
+        updatedAt: '2026-03-27T16:45:00.000Z',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should keep repository routes protected', async () => {
+    const server = createProtectedServer();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'authentication_required',
+        message: 'Authentication is required.',
       },
     });
 
