@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer } from '../../app/create-server.js';
 import { GitHubRepositoryDiscoveryError } from '../../modules/github/github-app.errors.js';
+import { RepositoryAlreadyExistsError } from '../../modules/repository-registry/repository.errors.js';
 import { createOperatorPrincipal } from '../../shared/auth/operator-principal.js';
 import type {
   CreateRepositoryInput,
@@ -520,6 +521,33 @@ describe('createServer', () => {
         isActive: true,
         createdAt: '2026-03-27T16:45:00.000Z',
         updatedAt: '2026-03-27T16:45:00.000Z',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return a consistent conflict response when the repository already exists', async () => {
+    const server = createProtectedServer({
+      createRepository: async () => {
+        throw new RepositoryAlreadyExistsError();
+      },
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+      payload: buildCreateRepositoryInput(),
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'repository_already_exists',
+        message: 'Repository is already monitored.',
       },
     });
 

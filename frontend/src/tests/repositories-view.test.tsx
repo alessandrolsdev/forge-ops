@@ -147,4 +147,61 @@ describe('RepositoriesView', () => {
       ).toBeInTheDocument();
     });
   });
+
+  it('should surface repository conflicts clearly and refresh monitored repositories', async () => {
+    const getRepositories = vi
+      .fn<ForgeOpsApiClient['getRepositories']>()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]);
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories,
+      getRepositoryDiscovery: vi.fn().mockResolvedValue([
+        {
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isPrivate: true,
+        },
+      ]),
+      createRepository: vi
+        .fn()
+        .mockRejectedValue(
+          new ApiClientError('Repository is already monitored.', 409, 'repository_already_exists'),
+        ),
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Connect repository' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect repository' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Repository is already monitored.')).toBeInTheDocument();
+      expect(screen.getByText('Already monitored')).toBeInTheDocument();
+      expect(getRepositories).toHaveBeenCalledTimes(2);
+    });
+  });
 });
