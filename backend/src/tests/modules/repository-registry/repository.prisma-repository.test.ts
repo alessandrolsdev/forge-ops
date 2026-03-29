@@ -39,9 +39,11 @@ describe('PrismaRepositoryRepository', () => {
   it('should create and map a repository record', async () => {
     const create = vi.fn().mockResolvedValue(buildRecord());
     const findMany = vi.fn();
+    const findUnique = vi.fn();
     const repository = new PrismaRepositoryRepository({
       create,
       findMany,
+      findUnique,
     });
 
     await expect(
@@ -72,9 +74,11 @@ describe('PrismaRepositoryRepository', () => {
       buildRecord({ id: 'repo_b', fullName: 'forgeops/b', name: 'b' }),
       buildRecord({ id: 'repo_a', fullName: 'forgeops/a', name: 'a' }),
     ]);
+    const findUnique = vi.fn();
     const repository = new PrismaRepositoryRepository({
       create,
       findMany,
+      findUnique,
     });
 
     await expect(repository.list()).resolves.toEqual([
@@ -92,9 +96,11 @@ describe('PrismaRepositoryRepository', () => {
   it('should translate unique constraint errors into a domain conflict', async () => {
     const create = vi.fn().mockRejectedValue({ code: 'P2002' });
     const findMany = vi.fn();
+    const findUnique = vi.fn();
     const repository = new PrismaRepositoryRepository({
       create,
       findMany,
+      findUnique,
     });
 
     await expect(
@@ -106,5 +112,24 @@ describe('PrismaRepositoryRepository', () => {
         defaultBranch: 'main',
       }),
     ).rejects.toBeInstanceOf(RepositoryAlreadyExistsError);
+  });
+
+  it('should find a repository by id when it exists', async () => {
+    const create = vi.fn();
+    const findMany = vi.fn();
+    const findUnique = vi.fn().mockResolvedValue(buildRecord());
+    const repository = new PrismaRepositoryRepository({
+      create,
+      findMany,
+      findUnique,
+    });
+
+    await expect(repository.findById('repo_123')).resolves.toEqual(buildRecord());
+
+    expect(findUnique).toHaveBeenCalledWith({
+      where: {
+        id: 'repo_123',
+      },
+    });
   });
 });

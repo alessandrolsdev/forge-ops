@@ -9,7 +9,10 @@ import type {
 } from '../github-app.boundary.js';
 import type { GitHubAppEnv } from '../../../infra/config/github-app-env.js';
 import { ConfigurationError } from '../../../shared/errors/configuration-error.js';
-import { GitHubRepositoryDiscoveryError } from '../github-app.errors.js';
+import {
+  GitHubRepositoryDiscoveryError,
+  GitHubWorkflowCatalogSyncError,
+} from '../github-app.errors.js';
 
 const githubInstallationAccessTokenSchema = z.object({
   token: z.string().trim().min(1),
@@ -26,6 +29,23 @@ const githubInstallationRepositoriesSchema = z.object({
       owner: z.object({
         login: z.string().trim().min(1),
       }),
+    }),
+  ),
+});
+
+const githubRepositoryWorkflowsSchema = z.object({
+  workflows: z.array(
+    z.object({
+      id: z.number().int().nonnegative(),
+      name: z.string().trim().min(1),
+      path: z.string().trim().min(1),
+      state: z.enum([
+        'active',
+        'deleted',
+        'disabled_fork',
+        'disabled_inactivity',
+        'disabled_manually',
+      ]),
     }),
   ),
 });
@@ -130,8 +150,35 @@ export class GitHubAppProvider implements GitHubAppBoundary {
     repository: GitHubRepositoryDescriptor,
   ): Promise<GitHubWorkflowDescriptor[]> {
     this.assertConfigured();
-    void repository;
-    return [];
+
+    try {
+      const installationToken = await this.createInstallationAccessToken();
+      const payload = await this.requestJson(
+        `${this.apiBaseUrl}/repos/${repository.owner}/${repository.name}/actions/workflows?per_page=100`,
+        {
+          method: 'GET',
+          headers: this.createJsonHeaders(`Bearer ${installationToken}`),
+        },
+        githubRepositoryWorkflowsSchema,
+      );
+
+      return payload.workflows.map((workflow) => ({
+        githubWorkflowId: String(workflow.id),
+        name: workflow.name,
+        path: workflow.path,
+        state: workflow.state,
+        sourceType: 'local',
+      }));
+    } catch (error) {
+      if (
+        error instanceof ConfigurationError ||
+        error instanceof GitHubWorkflowCatalogSyncError
+      ) {
+        throw error;
+      }
+
+      throw new GitHubWorkflowCatalogSyncError();
+    }
   }
 
   private async createInstallationAccessToken(): Promise<string> {

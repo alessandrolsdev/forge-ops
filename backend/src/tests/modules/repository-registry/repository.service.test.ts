@@ -68,6 +68,7 @@ describe('RepositoryService', () => {
       repository: {
         list,
         create,
+        findById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -104,6 +105,7 @@ describe('RepositoryService', () => {
       repository: {
         list,
         create,
+        findById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -143,6 +145,7 @@ describe('RepositoryService', () => {
       repository: {
         list,
         create,
+        findById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
