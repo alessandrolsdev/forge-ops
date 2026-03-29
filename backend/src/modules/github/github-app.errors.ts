@@ -9,3 +9,13 @@ export class GitHubRepositoryDiscoveryError extends ApplicationError {
     );
   }
 }
+
+export class GitHubWorkflowCatalogSyncError extends ApplicationError {
+  constructor() {
+    super(
+      'GitHub workflow catalog is currently unavailable.',
+      503,
+      'github_workflow_catalog_unavailable',
+    );
+  }
+}

@@ -30,6 +30,11 @@ type RepositoryDelegate = {
       createdAt: 'asc' | 'desc';
     };
   }): Promise<RepositoryRecord[]>;
+  findUnique(args: {
+    where: {
+      id: string;
+    };
+  }): Promise<RepositoryRecord | null>;
 };
 
 const isUniqueConstraintError = (error: unknown): boolean => {
@@ -89,5 +94,15 @@ export class PrismaRepositoryRepository implements RepositoryRepository {
     });
 
     return records.map(toRepository);
+  }
+
+  async findById(id: string): Promise<Repository | null> {
+    const record = await this.repository.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    return record ? toRepository(record) : null;
   }
 }

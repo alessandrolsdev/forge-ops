@@ -19,9 +19,16 @@ export interface GitHubInstallationRepository {
 }
 
 export interface GitHubWorkflowDescriptor {
-  id: string;
+  githubWorkflowId: string;
   name: string;
   path: string;
+  state:
+    | 'active'
+    | 'deleted'
+    | 'disabled_fork'
+    | 'disabled_inactivity'
+    | 'disabled_manually';
+  sourceType: 'local' | 'reusable';
 }
 
 export interface GitHubAppBoundary {
