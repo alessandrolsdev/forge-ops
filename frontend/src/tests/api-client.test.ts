@@ -191,12 +191,12 @@ describe('createApiClient', () => {
         new Response(
           JSON.stringify({
             error: {
-              code: 'forbidden',
-              message: 'You are not allowed to perform this action.',
+              code: 'repository_already_exists',
+              message: 'Repository is already monitored.',
             },
           }),
           {
-            status: 403,
+            status: 409,
             headers: {
               'content-type': 'application/json',
             },
@@ -230,7 +230,7 @@ describe('createApiClient', () => {
         defaultBranch: 'main',
       }),
     ).rejects.toEqual(
-      new ApiClientError('You are not allowed to perform this action.', 403, 'forbidden'),
+      new ApiClientError('Repository is already monitored.', 409, 'repository_already_exists'),
     );
 
     expect(fetcher).toHaveBeenNthCalledWith(
