@@ -110,6 +110,7 @@ const createProtectedServer = (overrides?: {
     },
     repositoryRegistryRepository: {
       list: async () => repositories,
+      findById: async (id) => repositories.find((repository) => repository.id === id) ?? null,
       create:
         overrides?.createRepository ??
         (async (input) =>
@@ -142,6 +143,7 @@ describe('createServer', () => {
       githubConfig: null,
       repositoryRegistryRepository: {
         list: async () => [],
+        findById: async () => null,
         create: async (input) =>
           buildRepository({
             githubRepoId: input.githubRepoId,
@@ -185,6 +187,7 @@ describe('createServer', () => {
       githubConfig: null,
       repositoryRegistryRepository: {
         list: async () => [],
+        findById: async () => null,
         create: async (input) =>
           buildRepository({
             githubRepoId: input.githubRepoId,
@@ -225,6 +228,7 @@ describe('createServer', () => {
       githubConfig: null,
       repositoryRegistryRepository: {
         list: async () => [],
+        findById: async () => null,
         create: async (input) =>
           buildRepository({
             githubRepoId: input.githubRepoId,
@@ -265,6 +269,7 @@ describe('createServer', () => {
       githubConfig: null,
       repositoryRegistryRepository: {
         list: async () => [],
+        findById: async () => null,
         create: async (input) =>
           buildRepository({
             githubRepoId: input.githubRepoId,
@@ -305,6 +310,7 @@ describe('createServer', () => {
       githubConfig: null,
       repositoryRegistryRepository: {
         list: async () => [],
+        findById: async () => null,
         create: async (input) =>
           buildRepository({
             githubRepoId: input.githubRepoId,
@@ -362,6 +368,7 @@ describe('createServer', () => {
       githubConfig: null,
       repositoryRegistryRepository: {
         list: async () => [],
+        findById: async () => null,
         create: async (input) =>
           buildRepository({
             githubRepoId: input.githubRepoId,
@@ -419,6 +426,7 @@ describe('createServer', () => {
       githubConfig: null,
       repositoryRegistryRepository: {
         list: async () => [],
+        findById: async () => null,
         create: async (input) =>
           buildRepository({
             githubRepoId: input.githubRepoId,

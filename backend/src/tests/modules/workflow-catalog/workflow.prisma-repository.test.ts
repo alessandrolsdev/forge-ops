@@ -40,8 +40,10 @@ describe('PrismaWorkflowRepository', () => {
   it('should create and map a workflow record', async () => {
     const create = vi.fn().mockResolvedValue(buildRecord());
     const findMany = vi.fn();
+    const upsert = vi.fn();
     const repository = new PrismaWorkflowRepository({
       create,
+      upsert,
       findMany,
     });
 
@@ -70,6 +72,7 @@ describe('PrismaWorkflowRepository', () => {
 
   it('should list workflows by repository ordered by newest first', async () => {
     const create = vi.fn();
+    const upsert = vi.fn();
     const findMany = vi.fn().mockResolvedValue([
       buildRecord({
         id: 'workflow_2',
@@ -85,6 +88,7 @@ describe('PrismaWorkflowRepository', () => {
     ]);
     const repository = new PrismaWorkflowRepository({
       create,
+      upsert,
       findMany,
     });
 
@@ -115,8 +119,10 @@ describe('PrismaWorkflowRepository', () => {
   it('should translate unique constraint errors into a domain conflict', async () => {
     const create = vi.fn().mockRejectedValue({ code: 'P2002' });
     const findMany = vi.fn();
+    const upsert = vi.fn();
     const repository = new PrismaWorkflowRepository({
       create,
+      upsert,
       findMany,
     });
 
@@ -130,5 +136,50 @@ describe('PrismaWorkflowRepository', () => {
         sourceType: 'local',
       }),
     ).rejects.toBeInstanceOf(WorkflowAlreadyExistsError);
+  });
+
+  it('should upsert workflow catalog entries by repository and GitHub workflow id', async () => {
+    const create = vi.fn();
+    const upsert = vi.fn().mockResolvedValue(buildRecord({ name: 'Deploy' }));
+    const findMany = vi.fn();
+    const repository = new PrismaWorkflowRepository({
+      create,
+      upsert,
+      findMany,
+    });
+
+    await expect(
+      repository.upsert({
+        repositoryId: 'repo_123',
+        githubWorkflowId: 'workflow-gh-123',
+        name: 'Deploy',
+        path: '.github/workflows/deploy.yml',
+        state: 'active',
+        sourceType: 'local',
+      }),
+    ).resolves.toEqual(buildRecord({ name: 'Deploy' }));
+
+    expect(upsert).toHaveBeenCalledWith({
+      where: {
+        repositoryId_githubWorkflowId: {
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+        },
+      },
+      create: {
+        repositoryId: 'repo_123',
+        githubWorkflowId: 'workflow-gh-123',
+        name: 'Deploy',
+        path: '.github/workflows/deploy.yml',
+        state: 'active',
+        sourceType: 'local',
+      },
+      update: {
+        name: 'Deploy',
+        path: '.github/workflows/deploy.yml',
+        state: 'active',
+        sourceType: 'local',
+      },
+    });
   });
 });

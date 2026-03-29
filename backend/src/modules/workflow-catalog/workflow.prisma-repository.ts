@@ -30,6 +30,28 @@ type WorkflowDelegate = {
       sourceType: WorkflowSourceType;
     };
   }): Promise<WorkflowRecord>;
+  upsert(args: {
+    where: {
+      repositoryId_githubWorkflowId: {
+        repositoryId: string;
+        githubWorkflowId: string;
+      };
+    };
+    create: {
+      repositoryId: string;
+      githubWorkflowId: string;
+      name: string;
+      path: string;
+      state: WorkflowState;
+      sourceType: WorkflowSourceType;
+    };
+    update: {
+      name: string;
+      path: string;
+      state: WorkflowState;
+      sourceType: WorkflowSourceType;
+    };
+  }): Promise<WorkflowRecord>;
   findMany(args: {
     where: {
       repositoryId: string;
@@ -95,5 +117,32 @@ export class PrismaWorkflowRepository implements WorkflowRepository {
     });
 
     return records.map(toWorkflow);
+  }
+
+  async upsert(input: CreateWorkflowInput): Promise<Workflow> {
+    const record = await this.workflow.upsert({
+      where: {
+        repositoryId_githubWorkflowId: {
+          repositoryId: input.repositoryId,
+          githubWorkflowId: input.githubWorkflowId,
+        },
+      },
+      create: {
+        repositoryId: input.repositoryId,
+        githubWorkflowId: input.githubWorkflowId,
+        name: input.name,
+        path: input.path,
+        state: input.state,
+        sourceType: input.sourceType,
+      },
+      update: {
+        name: input.name,
+        path: input.path,
+        state: input.state,
+        sourceType: input.sourceType,
+      },
+    });
+
+    return toWorkflow(record);
   }
 }
