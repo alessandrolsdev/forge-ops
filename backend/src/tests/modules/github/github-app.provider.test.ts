@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createGitHubAppBoundary } from '../../../modules/github/github-app.boundary.js';
-import { GitHubRepositoryDiscoveryError } from '../../../modules/github/github-app.errors.js';
+import {
+  GitHubRepositoryDiscoveryError,
+  GitHubWorkflowCatalogSyncError,
+} from '../../../modules/github/github-app.errors.js';
 
 const buildConfig = () => ({
   GITHUB_APP_ID: '123456',
@@ -110,6 +113,106 @@ describe('GitHubAppProvider', () => {
     await expect(boundary.listInstallationRepositories()).rejects.toMatchObject({
       code: 'github_repository_discovery_unavailable',
       message: 'GitHub repository discovery is currently unavailable.',
+      statusCode: 503,
+    });
+  });
+
+  it('should exchange credentials and normalize repository workflows', async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'installation-token' }), {
+          status: 201,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workflows: [
+              {
+                id: 555,
+                name: 'CI',
+                path: '.github/workflows/ci.yml',
+                state: 'active',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-29T12:00:00.000Z'),
+    });
+
+    await expect(
+      boundary.listRepositoryWorkflows({
+        owner: 'forgeops',
+        name: 'backend',
+      }),
+    ).resolves.toEqual([
+      {
+        githubWorkflowId: '555',
+        name: 'CI',
+        path: '.github/workflows/ci.yml',
+        state: 'active',
+        sourceType: 'local',
+      },
+    ]);
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      'https://api.github.test/repos/forgeops/backend/actions/workflows?per_page=100',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Accept: 'application/vnd.github+json',
+          Authorization: 'Bearer installation-token',
+        }),
+      }),
+    );
+  });
+
+  it('should raise a safe workflow catalog error when workflow sync fails', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'rate limited' }), {
+        status: 403,
+        headers: {
+          'content-type': 'application/json',
+        },
+      }),
+    );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-29T12:00:00.000Z'),
+    });
+
+    await expect(
+      boundary.listRepositoryWorkflows({
+        owner: 'forgeops',
+        name: 'backend',
+      }),
+    ).rejects.toBeInstanceOf(GitHubWorkflowCatalogSyncError);
+    await expect(
+      boundary.listRepositoryWorkflows({
+        owner: 'forgeops',
+        name: 'backend',
+      }),
+    ).rejects.toMatchObject({
+      code: 'github_workflow_catalog_unavailable',
+      message: 'GitHub workflow catalog is currently unavailable.',
       statusCode: 503,
     });
   });
