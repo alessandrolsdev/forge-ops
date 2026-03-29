@@ -299,6 +299,73 @@ pre {
   overflow: auto;
 }
 
+.repository-access {
+  display: grid;
+  gap: 16px;
+}
+
+.repository-access__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.repository-access__hint,
+.empty-state {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.status-banner {
+  padding: 16px 18px;
+  border: 1px solid rgba(17, 94, 89, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--foreground);
+  box-shadow: var(--shadow);
+}
+
+.repository-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-list__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.repository-list__summary {
+  display: grid;
+  gap: 6px;
+}
+
+.repository-list__summary span {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.repository-list__badge {
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -328,5 +395,10 @@ pre {
   .panel {
     padding: 20px;
     border-radius: 22px;
+  }
+
+  .repository-list__item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
