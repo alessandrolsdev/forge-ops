@@ -59,6 +59,7 @@ const createProtectedServer = (overrides?: {
   createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
   installationRepositories?: GitHubInstallationRepository[];
   installationDiscoveryError?: Error;
+  capabilities?: string[];
 }) => {
   const repositories = overrides?.repositories ?? [];
 
@@ -81,7 +82,8 @@ const createProtectedServer = (overrides?: {
         createOperatorPrincipal({
           subject: `operator:${token}`,
           email: 'operator@forgeops.dev',
-          capabilities: ['repositories:read', 'repositories:write'],
+          capabilities:
+            overrides?.capabilities ?? ['repositories:read', 'repositories:write'],
         }),
     },
     githubConfig: null,
@@ -518,6 +520,31 @@ describe('createServer', () => {
         isActive: true,
         createdAt: '2026-03-27T16:45:00.000Z',
         updatedAt: '2026-03-27T16:45:00.000Z',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should forbid repository creation without the write capability', async () => {
+    const server = createProtectedServer({
+      capabilities: ['repositories:read'],
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+      payload: buildCreateRepositoryInput(),
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'forbidden',
+        message: 'You are not allowed to perform this action.',
       },
     });
 
