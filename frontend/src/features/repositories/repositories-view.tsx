@@ -79,6 +79,15 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
       });
     },
     onError: (error) => {
+      if (
+        error instanceof ApiClientError &&
+        error.code === 'repository_already_exists'
+      ) {
+        void queryClient.invalidateQueries({
+          queryKey: ['repositories', accessToken],
+        });
+      }
+
       setStatusMessage(getErrorMessage(error, 'Unable to connect the repository right now.'));
     },
   });
