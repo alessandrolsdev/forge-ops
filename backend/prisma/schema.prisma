@@ -17,7 +17,37 @@ model Repository {
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  workflows     Workflow[]
 
   @@index([owner, name])
+}
+
+model Workflow {
+  id               String             @id @default(cuid())
+  repositoryId     String
+  githubWorkflowId String
+  name             String
+  path             String
+  state            WorkflowState
+  sourceType       WorkflowSourceType
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  repository       Repository         @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, githubWorkflowId])
+  @@index([repositoryId, createdAt])
+}
+
+enum WorkflowState {
+  active
+  deleted
+  disabled_fork
+  disabled_inactivity
+  disabled_manually
+}
+
+enum WorkflowSourceType {
+  local
+  reusable
 }
 
