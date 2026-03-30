@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer } from '../../app/create-server.js';
-import { GitHubRepositoryDiscoveryError } from '../../modules/github/github-app.errors.js';
+import {
+  GitHubRepositoryDiscoveryError,
+  GitHubWorkflowCatalogSyncError,
+} from '../../modules/github/github-app.errors.js';
 import { RepositoryAlreadyExistsError } from '../../modules/repository-registry/repository.errors.js';
 import { createOperatorPrincipal } from '../../shared/auth/operator-principal.js';
 import type {
@@ -77,12 +80,21 @@ const createProtectedServer = (overrides?: {
   repositories?: Repository[];
   workflows?: Workflow[];
   createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
+  deleteRepositoryById?: (id: string) => Promise<void>;
   installationRepositories?: GitHubInstallationRepository[];
   installationDiscoveryError?: Error;
+  workflowCatalogSyncError?: Error;
+  githubWorkflows?: Array<{
+    githubWorkflowId: string;
+    name: string;
+    path: string;
+    state: Workflow['state'];
+    sourceType: Workflow['sourceType'];
+  }>;
   capabilities?: string[];
 }) => {
-  const repositories = overrides?.repositories ?? [];
-  const workflows = overrides?.workflows ?? [];
+  const repositoryStore = [...(overrides?.repositories ?? [])];
+  const workflowStore = [...(overrides?.workflows ?? [])];
 
   return createServer({
     env: {
@@ -126,36 +138,87 @@ const createProtectedServer = (overrides?: {
 
         return overrides?.installationRepositories ?? [];
       },
-      listRepositoryWorkflows: async () => [],
+      listRepositoryWorkflows: async () => {
+        if (overrides?.workflowCatalogSyncError) {
+          throw overrides.workflowCatalogSyncError;
+        }
+
+        return (
+          overrides?.githubWorkflows ?? [
+            {
+              githubWorkflowId: 'workflow-gh-123',
+              name: 'CI',
+              path: '.github/workflows/ci.yml',
+              state: 'active',
+              sourceType: 'local',
+            },
+          ]
+        );
+      },
     },
     repositoryRegistryRepository: {
-      list: async () => repositories,
-      findById: async (id) => repositories.find((repository) => repository.id === id) ?? null,
+      list: async () => [...repositoryStore],
+      findById: async (id) =>
+        repositoryStore.find((repository) => repository.id === id) ?? null,
       create:
         overrides?.createRepository ??
-        (async (input) =>
-          buildRepository({
+        (async (input) => {
+          const repository = buildRepository({
             githubRepoId: input.githubRepoId,
             owner: input.owner,
             name: input.name,
             fullName: input.fullName,
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
-          })),
+          });
+
+          repositoryStore.unshift(repository);
+
+          return repository;
+        }),
+      deleteById:
+        overrides?.deleteRepositoryById ??
+        (async (id) => {
+          const repositoryIndex = repositoryStore.findIndex(
+            (repository) => repository.id === id,
+          );
+
+          if (repositoryIndex >= 0) {
+            repositoryStore.splice(repositoryIndex, 1);
+          }
+        }),
     },
     workflowCatalogRepository: {
       create: async () => buildWorkflow(),
-      upsert: async (input) =>
-        buildWorkflow({
+      upsert: async (input) => {
+        const existingWorkflowIndex = workflowStore.findIndex(
+          (workflow) =>
+            workflow.repositoryId === input.repositoryId &&
+            workflow.githubWorkflowId === input.githubWorkflowId,
+        );
+        const workflow = buildWorkflow({
+          id:
+            existingWorkflowIndex >= 0
+              ? workflowStore[existingWorkflowIndex]!.id
+              : `workflow_${workflowStore.length + 1}`,
           repositoryId: input.repositoryId,
           githubWorkflowId: input.githubWorkflowId,
           name: input.name,
           path: input.path,
           state: input.state,
           sourceType: input.sourceType,
-        }),
+        });
+
+        if (existingWorkflowIndex >= 0) {
+          workflowStore[existingWorkflowIndex] = workflow;
+        } else {
+          workflowStore.push(workflow);
+        }
+
+        return workflow;
+      },
       listByRepositoryId: async (repositoryId) =>
-        workflows.filter((workflow) => workflow.repositoryId === repositoryId),
+        workflowStore.filter((workflow) => workflow.repositoryId === repositoryId),
     },
   });
 };
@@ -187,6 +250,7 @@ describe('createServer', () => {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           }),
+        deleteById: async () => undefined,
       },
     });
 
@@ -231,6 +295,7 @@ describe('createServer', () => {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           }),
+        deleteById: async () => undefined,
       },
     });
 
@@ -272,6 +337,7 @@ describe('createServer', () => {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           }),
+        deleteById: async () => undefined,
       },
     });
 
@@ -313,6 +379,7 @@ describe('createServer', () => {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           }),
+        deleteById: async () => undefined,
       },
     });
 
@@ -354,6 +421,7 @@ describe('createServer', () => {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           }),
+        deleteById: async () => undefined,
       },
     });
 
@@ -412,6 +480,7 @@ describe('createServer', () => {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           }),
+        deleteById: async () => undefined,
       },
     });
 
@@ -470,6 +539,7 @@ describe('createServer', () => {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           }),
+        deleteById: async () => undefined,
       },
     });
 
@@ -564,6 +634,86 @@ describe('createServer', () => {
         createdAt: '2026-03-27T16:45:00.000Z',
         updatedAt: '2026-03-27T16:45:00.000Z',
       },
+    });
+
+    await server.close();
+  });
+
+  it('should sync workflows during repository creation so the catalog is immediately available', async () => {
+    const server = createProtectedServer();
+
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+      payload: buildCreateRepositoryInput(),
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+
+    const workflowsResponse = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/workflows',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(workflowsResponse.statusCode).toBe(200);
+    expect(workflowsResponse.json()).toEqual({
+      workflows: [
+        {
+          id: 'workflow_1',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+          name: 'CI',
+          path: '.github/workflows/ci.yml',
+          state: 'active',
+          sourceType: 'local',
+          createdAt: '2026-03-30T15:10:00.000Z',
+          updatedAt: '2026-03-30T15:10:00.000Z',
+        },
+      ],
+    });
+
+    await server.close();
+  });
+
+  it('should roll back repository creation when workflow sync fails', async () => {
+    const server = createProtectedServer({
+      workflowCatalogSyncError: new GitHubWorkflowCatalogSyncError(),
+    });
+
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+      payload: buildCreateRepositoryInput(),
+    });
+
+    expect(createResponse.statusCode).toBe(503);
+    expect(createResponse.json()).toEqual({
+      error: {
+        code: 'github_workflow_catalog_unavailable',
+        message: 'GitHub workflow catalog is currently unavailable.',
+      },
+    });
+
+    const repositoriesResponse = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(repositoriesResponse.statusCode).toBe(200);
+    expect(repositoriesResponse.json()).toEqual({
+      repositories: [],
     });
 
     await server.close();

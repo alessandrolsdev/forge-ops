@@ -40,10 +40,12 @@ describe('PrismaRepositoryRepository', () => {
     const create = vi.fn().mockResolvedValue(buildRecord());
     const findMany = vi.fn();
     const findUnique = vi.fn();
+    const del = vi.fn();
     const repository = new PrismaRepositoryRepository({
       create,
       findMany,
       findUnique,
+      delete: del,
     });
 
     await expect(
@@ -75,10 +77,12 @@ describe('PrismaRepositoryRepository', () => {
       buildRecord({ id: 'repo_a', fullName: 'forgeops/a', name: 'a' }),
     ]);
     const findUnique = vi.fn();
+    const del = vi.fn();
     const repository = new PrismaRepositoryRepository({
       create,
       findMany,
       findUnique,
+      delete: del,
     });
 
     await expect(repository.list()).resolves.toEqual([
@@ -97,10 +101,12 @@ describe('PrismaRepositoryRepository', () => {
     const create = vi.fn().mockRejectedValue({ code: 'P2002' });
     const findMany = vi.fn();
     const findUnique = vi.fn();
+    const del = vi.fn();
     const repository = new PrismaRepositoryRepository({
       create,
       findMany,
       findUnique,
+      delete: del,
     });
 
     await expect(
@@ -118,15 +124,38 @@ describe('PrismaRepositoryRepository', () => {
     const create = vi.fn();
     const findMany = vi.fn();
     const findUnique = vi.fn().mockResolvedValue(buildRecord());
+    const del = vi.fn();
     const repository = new PrismaRepositoryRepository({
       create,
       findMany,
       findUnique,
+      delete: del,
     });
 
     await expect(repository.findById('repo_123')).resolves.toEqual(buildRecord());
 
     expect(findUnique).toHaveBeenCalledWith({
+      where: {
+        id: 'repo_123',
+      },
+    });
+  });
+
+  it('should delete a repository by id', async () => {
+    const create = vi.fn();
+    const findMany = vi.fn();
+    const findUnique = vi.fn();
+    const del = vi.fn().mockResolvedValue(buildRecord());
+    const repository = new PrismaRepositoryRepository({
+      create,
+      findMany,
+      findUnique,
+      delete: del,
+    });
+
+    await expect(repository.deleteById('repo_123')).resolves.toBeUndefined();
+
+    expect(del).toHaveBeenCalledWith({
       where: {
         id: 'repo_123',
       },

@@ -4,4 +4,5 @@ export interface RepositoryRepository {
   create(input: CreateRepositoryInput): Promise<Repository>;
   list(): Promise<Repository[]>;
   findById(id: string): Promise<Repository | null>;
+  deleteById(id: string): Promise<void>;
 }
