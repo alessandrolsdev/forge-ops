@@ -11,6 +11,9 @@ import type { RepositoryRepository } from './repository.repository.js';
 import { ApplicationError } from '../../shared/errors/application-error.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
+type WorkflowCatalogSync = {
+  syncByRepositoryId(repositoryId: string): Promise<unknown[]>;
+};
 
 const noopLogger: ServiceLogger = {
   info: () => undefined,
@@ -20,6 +23,7 @@ const noopLogger: ServiceLogger = {
 export interface RepositoryServiceOptions {
   repository: RepositoryRepository;
   githubBoundary: GitHubAppBoundary;
+  workflowCatalogSync?: WorkflowCatalogSync;
   logger?: ServiceLogger;
 }
 
@@ -33,6 +37,18 @@ export class RepositoryService {
   async create(input: CreateRepositoryInput): Promise<Repository> {
     try {
       const repository = await this.options.repository.create(input);
+      let syncedWorkflows: unknown[] | undefined;
+
+      try {
+        syncedWorkflows = await this.options.workflowCatalogSync?.syncByRepositoryId(
+          repository.id,
+        );
+      } catch (error) {
+        throw {
+          repositoryId: repository.id,
+          cause: error,
+        };
+      }
 
       this.logger.info(
         {
@@ -40,23 +56,29 @@ export class RepositoryService {
           repositoryId: repository.id,
           githubRepoId: repository.githubRepoId,
           fullName: repository.fullName,
+          syncedWorkflowCount: syncedWorkflows?.length ?? 0,
         },
         'Repository ingestion completed.',
       );
 
       return repository;
     } catch (error) {
+      if (hasRepositoryContext(error)) {
+        await this.rollbackRepository(error.repositoryId);
+      }
+
       this.logger.error(
         {
           event: 'repository_ingestion_failed',
+          repositoryId: getRepositoryId(error),
           githubRepoId: input.githubRepoId,
           fullName: input.fullName,
-          ...serializeApplicationError(error),
+          ...serializeApplicationError(unwrapRepositoryContext(error)),
         },
         'Repository ingestion failed.',
       );
 
-      throw error;
+      throw unwrapRepositoryContext(error);
     }
   }
 
@@ -66,6 +88,21 @@ export class RepositoryService {
 
   private get logger(): ServiceLogger {
     return this.options.logger ?? noopLogger;
+  }
+
+  private async rollbackRepository(repositoryId: string): Promise<void> {
+    try {
+      await this.options.repository.deleteById(repositoryId);
+    } catch (error) {
+      this.logger.error(
+        {
+          event: 'repository_ingestion_rollback_failed',
+          repositoryId,
+          ...serializeApplicationError(error),
+        },
+        'Repository rollback after failed ingestion failed.',
+      );
+    }
   }
 }
 
@@ -86,4 +123,31 @@ const serializeApplicationError = (error: unknown): Record<string, string | numb
   return {
     errorName: 'UnknownError',
   };
+};
+
+const hasRepositoryContext = (
+  error: unknown,
+): error is { repositoryId: string; cause: unknown } => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'repositoryId' in error &&
+    typeof error.repositoryId === 'string'
+  );
+};
+
+const getRepositoryId = (error: unknown): string | undefined => {
+  return hasRepositoryContext(error) ? error.repositoryId : undefined;
+};
+
+const unwrapRepositoryContext = (error: unknown): unknown => {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'cause' in error
+  ) {
+    return error.cause;
+  }
+
+  return error;
 };

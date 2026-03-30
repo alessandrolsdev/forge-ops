@@ -77,6 +77,7 @@ describe('WorkflowService', () => {
         create: vi.fn(),
         list: vi.fn(),
         findById,
+        deleteById: vi.fn(),
       },
       workflowRepository: {
         create: vi.fn(),
@@ -154,6 +155,7 @@ describe('WorkflowService', () => {
         create: vi.fn(),
         list: vi.fn(),
         findById: vi.fn().mockResolvedValue(null),
+        deleteById: vi.fn(),
       },
       workflowRepository: {
         create: vi.fn(),
@@ -202,6 +204,7 @@ describe('WorkflowService', () => {
         create: vi.fn(),
         list: vi.fn(),
         findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
       },
       workflowRepository: {
         create: vi.fn(),
