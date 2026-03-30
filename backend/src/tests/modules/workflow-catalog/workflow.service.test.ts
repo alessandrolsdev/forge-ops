@@ -52,6 +52,10 @@ describe('WorkflowService', () => {
       }),
     ]);
     const upsert = vi.fn().mockResolvedValue(buildWorkflow());
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
     const listRepositoryWorkflows = vi.fn().mockResolvedValue([
       {
         githubWorkflowId: 'workflow-gh-123',
@@ -93,6 +97,7 @@ describe('WorkflowService', () => {
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows,
       },
+      logger,
     });
 
     await expect(service.syncByRepositoryId('repo_123')).resolves.toEqual([
@@ -126,9 +131,24 @@ describe('WorkflowService', () => {
       state: 'active',
       sourceType: 'local',
     });
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event: 'workflow_catalog_sync_succeeded',
+        repositoryId: 'repo_123',
+        fullName: 'forgeops/backend',
+        remoteWorkflowCount: 2,
+        persistedWorkflowCount: 2,
+      },
+      'Workflow catalog sync completed.',
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('should fail with repository not found when sync receives an unknown repository id', async () => {
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
     const service = new WorkflowService({
       repositoryRegistryRepository: {
         create: vi.fn(),
@@ -154,14 +174,29 @@ describe('WorkflowService', () => {
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows: async () => [],
       },
+      logger,
     });
 
     await expect(service.syncByRepositoryId('missing_repo')).rejects.toBeInstanceOf(
       RepositoryNotFoundError,
     );
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        event: 'workflow_catalog_sync_failed',
+        repositoryId: 'missing_repo',
+        errorCode: 'repository_not_found',
+        errorStatusCode: 404,
+      },
+      'Workflow catalog sync failed.',
+    );
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
   it('should propagate a safe GitHub workflow catalog error during sync', async () => {
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
     const service = new WorkflowService({
       repositoryRegistryRepository: {
         create: vi.fn(),
@@ -189,10 +224,22 @@ describe('WorkflowService', () => {
           throw new GitHubWorkflowCatalogSyncError();
         },
       },
+      logger,
     });
 
     await expect(service.syncByRepositoryId('repo_123')).rejects.toBeInstanceOf(
       GitHubWorkflowCatalogSyncError,
     );
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        event: 'workflow_catalog_sync_failed',
+        repositoryId: 'repo_123',
+        fullName: 'forgeops/backend',
+        errorCode: 'github_workflow_catalog_unavailable',
+        errorStatusCode: 503,
+      },
+      'Workflow catalog sync failed.',
+    );
+    expect(logger.info).not.toHaveBeenCalled();
   });
 });

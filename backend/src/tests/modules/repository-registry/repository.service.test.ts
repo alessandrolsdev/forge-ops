@@ -4,6 +4,7 @@ import type {
   Repository,
 } from '../../../modules/repository-registry/repository.entity.js';
 import type { GitHubInstallationRepository } from '../../../modules/github/github-app.boundary.js';
+import { RepositoryAlreadyExistsError } from '../../../modules/repository-registry/repository.errors.js';
 import { RepositoryService } from '../../../modules/repository-registry/repository.service.js';
 
 const buildRepository = (
@@ -101,6 +102,10 @@ describe('RepositoryService', () => {
   it('should delegate repository creation to the repository layer', async () => {
     const create = vi.fn().mockResolvedValue(buildRepository());
     const list = vi.fn();
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
     const service = new RepositoryService({
       repository: {
         list,
@@ -121,10 +126,66 @@ describe('RepositoryService', () => {
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows: async () => [],
       },
+      logger,
     });
 
     await expect(service.create(buildCreateInput())).resolves.toEqual(buildRepository());
     expect(create).toHaveBeenCalledWith(buildCreateInput());
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event: 'repository_ingestion_succeeded',
+        repositoryId: 'repo_123',
+        githubRepoId: '123456789',
+        fullName: 'forgeops/backend',
+      },
+      'Repository ingestion completed.',
+    );
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('should log repository ingestion failures with safe operational context', async () => {
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+    const service = new RepositoryService({
+      repository: {
+        list: vi.fn(),
+        create: vi.fn().mockRejectedValue(new RepositoryAlreadyExistsError()),
+        findById: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: false,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: false,
+          appId: null,
+          installationId: null,
+          webhookConfigured: false,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+      },
+      logger,
+    });
+
+    await expect(service.create(buildCreateInput())).rejects.toBeInstanceOf(
+      RepositoryAlreadyExistsError,
+    );
+
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        event: 'repository_ingestion_failed',
+        githubRepoId: '123456789',
+        fullName: 'forgeops/backend',
+        errorCode: 'repository_already_exists',
+        errorStatusCode: 409,
+      },
+      'Repository ingestion failed.',
+    );
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
   it('should delegate repository discovery to the GitHub boundary', async () => {
