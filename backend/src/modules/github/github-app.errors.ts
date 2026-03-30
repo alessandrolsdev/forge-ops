@@ -19,3 +19,13 @@ export class GitHubWorkflowCatalogSyncError extends ApplicationError {
     );
   }
 }
+
+export class GitHubWebhookVerificationError extends ApplicationError {
+  constructor() {
+    super(
+      'GitHub webhook verification failed.',
+      401,
+      'github_webhook_verification_failed',
+    );
+  }
+}
