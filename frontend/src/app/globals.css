@@ -366,6 +366,48 @@ pre {
   white-space: nowrap;
 }
 
+.repository-list__actions,
+.workflow-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.repository-list__badge--neutral {
+  background: rgba(28, 36, 47, 0.08);
+  color: var(--foreground);
+}
+
+.workflow-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-list__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.workflow-list__summary {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-list__summary span {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -398,6 +440,17 @@ pre {
   }
 
   .repository-list__item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .repository-list__actions,
+  .workflow-list__item,
+  .workflow-list__meta {
+    width: 100%;
+  }
+
+  .workflow-list__item {
     flex-direction: column;
     align-items: flex-start;
   }

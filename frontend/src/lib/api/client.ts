@@ -68,9 +68,32 @@ const createRepositoryResponseSchema = z.object({
   repository: monitoredRepositorySchema,
 });
 
+const workflowCatalogItemSchema = z.object({
+  id: z.string().min(1),
+  repositoryId: z.string().min(1),
+  githubWorkflowId: z.string().min(1),
+  name: z.string().min(1),
+  path: z.string().min(1),
+  state: z.enum([
+    'active',
+    'deleted',
+    'disabled_fork',
+    'disabled_inactivity',
+    'disabled_manually',
+  ]),
+  sourceType: z.enum(['local', 'reusable']),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+const workflowCatalogResponseSchema = z.object({
+  workflows: z.array(workflowCatalogItemSchema),
+});
+
 export type MonitoredRepository = z.infer<typeof monitoredRepositorySchema>;
 export type RepositoryDiscoveryItem = z.infer<typeof repositoryDiscoveryItemSchema>;
 export type CreateRepositoryInput = z.infer<typeof createRepositoryInputSchema>;
+export type WorkflowCatalogItem = z.infer<typeof workflowCatalogItemSchema>;
 
 interface CreateApiClientOptions {
   baseUrl?: string;
@@ -94,6 +117,10 @@ export interface ForgeOpsApiClient {
   getHealth(): Promise<BackendHealthResponse>;
   getRepositories(accessToken: string): Promise<MonitoredRepository[]>;
   getRepositoryDiscovery(accessToken: string): Promise<RepositoryDiscoveryItem[]>;
+  getRepositoryWorkflows(
+    accessToken: string,
+    repositoryId: string,
+  ): Promise<WorkflowCatalogItem[]>;
   createRepository(
     accessToken: string,
     input: CreateRepositoryInput,
@@ -158,6 +185,27 @@ export const createApiClient = (options: CreateApiClientOptions = {}): ForgeOpsA
       }
 
       return repositoryDiscoveryResponseSchema.parse(await response.json()).repositories;
+    },
+
+    async getRepositoryWorkflows(
+      accessToken: string,
+      repositoryId: string,
+    ): Promise<WorkflowCatalogItem[]> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/workflows`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch repository workflows (${response.status})`,
+        );
+      }
+
+      return workflowCatalogResponseSchema.parse(await response.json()).workflows;
     },
 
     async createRepository(
