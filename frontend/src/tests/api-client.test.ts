@@ -161,6 +161,61 @@ describe('createApiClient', () => {
     );
   });
 
+  it('should fetch repository workflows with operator authorization', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          workflows: [
+            {
+              id: 'workflow_123',
+              repositoryId: 'repo_123',
+              githubWorkflowId: 'workflow-gh-123',
+              name: 'CI',
+              path: '.github/workflows/ci.yml',
+              state: 'active',
+              sourceType: 'local',
+              createdAt: '2026-03-30T00:00:00.000Z',
+              updatedAt: '2026-03-30T00:00:00.000Z',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'http://localhost:3333',
+      fetcher,
+    });
+
+    await expect(client.getRepositoryWorkflows('trusted-token', 'repo_123')).resolves.toEqual([
+      {
+        id: 'workflow_123',
+        repositoryId: 'repo_123',
+        githubWorkflowId: 'workflow-gh-123',
+        name: 'CI',
+        path: '.github/workflows/ci.yml',
+        state: 'active',
+        sourceType: 'local',
+        createdAt: '2026-03-30T00:00:00.000Z',
+        updatedAt: '2026-03-30T00:00:00.000Z',
+      },
+    ]);
+    expect(fetcher).toHaveBeenCalledWith(
+      'http://localhost:3333/api/v1/repositories/repo_123/workflows',
+      {
+        headers: {
+          accept: 'application/json',
+          authorization: 'Bearer trusted-token',
+        },
+      },
+    );
+  });
+
   it('should create repositories and surface structured API errors', async () => {
     const fetcher = vi
       .fn<typeof fetch>()

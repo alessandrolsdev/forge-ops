@@ -9,10 +9,13 @@ import {
   ApiClientError,
   createApiClient,
   type ForgeOpsApiClient,
+  type MonitoredRepository,
   type RepositoryDiscoveryItem,
 } from '@/lib/api/client';
 
 const STORAGE_KEY = 'forgeops.operator-access-token';
+const EMPTY_MONITORED_REPOSITORIES: MonitoredRepository[] = [];
+const EMPTY_DISCOVERED_REPOSITORIES: RepositoryDiscoveryItem[] = [];
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof ApiClientError) {
@@ -34,6 +37,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   const queryClient = useQueryClient();
   const [draftAccessToken, setDraftAccessToken] = useState('');
   const [accessToken, setAccessToken] = useState('');
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const hasAccessToken = accessToken.trim().length > 0;
@@ -63,6 +67,34 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     retry: false,
   });
 
+  const monitoredRepositories =
+    monitoredRepositoriesQuery.data ?? EMPTY_MONITORED_REPOSITORIES;
+  const discoveredRepositories = discoveryQuery.data ?? EMPTY_DISCOVERED_REPOSITORIES;
+
+  useEffect(() => {
+    if (monitoredRepositories.length === 0) {
+      setSelectedRepositoryId(null);
+      return;
+    }
+
+    const selectedExists = monitoredRepositories.some(
+      (repository) => repository.id === selectedRepositoryId,
+    );
+
+    const firstRepository = monitoredRepositories[0];
+
+    if (!selectedRepositoryId || !selectedExists) {
+      setSelectedRepositoryId(firstRepository?.id ?? null);
+    }
+  }, [monitoredRepositories, selectedRepositoryId]);
+
+  const workflowsQuery = useQuery({
+    queryKey: ['repository-workflows', accessToken, selectedRepositoryId],
+    queryFn: () => client.getRepositoryWorkflows(accessToken, selectedRepositoryId!),
+    enabled: hasAccessToken && selectedRepositoryId !== null,
+    retry: false,
+  });
+
   const createRepositoryMutation = useMutation({
     mutationFn: (repository: RepositoryDiscoveryItem) =>
       client.createRepository(accessToken, {
@@ -74,15 +106,18 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
       }),
     onSuccess: async (repository) => {
       setStatusMessage(`Repository ${repository.fullName} is now monitored.`);
-      await queryClient.invalidateQueries({
-        queryKey: ['repositories', accessToken],
-      });
+      setSelectedRepositoryId(repository.id);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['repositories', accessToken],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['repository-workflows', accessToken, repository.id],
+        }),
+      ]);
     },
     onError: (error) => {
-      if (
-        error instanceof ApiClientError &&
-        error.code === 'repository_already_exists'
-      ) {
+      if (error instanceof ApiClientError && error.code === 'repository_already_exists') {
         void queryClient.invalidateQueries({
           queryKey: ['repositories', accessToken],
         });
@@ -92,11 +127,12 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     },
   });
 
-  const monitoredRepositories = monitoredRepositoriesQuery.data ?? [];
-  const discoveredRepositories = discoveryQuery.data ?? [];
   const monitoredRepositoryNames = new Set(
     monitoredRepositories.map((repository) => repository.fullName),
   );
+  const selectedRepository =
+    monitoredRepositories.find((repository) => repository.id === selectedRepositoryId) ?? null;
+  const repositoryWorkflows = workflowsQuery.data ?? [];
 
   const submitAccessToken = () => {
     const normalizedToken = draftAccessToken.trim();
@@ -116,6 +152,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     window.localStorage.removeItem(STORAGE_KEY);
     setDraftAccessToken('');
     setAccessToken('');
+    setSelectedRepositoryId(null);
     setTokenError(null);
     setStatusMessage(null);
     void queryClient.removeQueries({
@@ -124,16 +161,20 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     void queryClient.removeQueries({
       queryKey: ['repository-discovery'],
     });
+    void queryClient.removeQueries({
+      queryKey: ['repository-workflows'],
+    });
   };
 
   return (
     <div className="page-stack">
       <section className="page-header">
         <span className="page-header__eyebrow">Repositories</span>
-        <h2 className="page-header__title">Connect repositories with the real backend flow.</h2>
+        <h2 className="page-header__title">Inspect repository automation from one place.</h2>
         <p className="page-header__description">
-          Discovery and onboarding now use the protected Repository Registry API so the operator can
-          see what is available, what is already monitored, and what should be connected next.
+          Repository onboarding, catalog discovery, and workflow visibility now share the same
+          protected frontend flow so the operator can move from connection to catalog inspection
+          without leaving the page.
         </p>
       </section>
 
@@ -188,17 +229,29 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
             </p>
           ) : (
             <ul className="repository-list">
-              {monitoredRepositories.map((repository) => (
-                <li key={repository.id} className="repository-list__item">
-                  <div className="repository-list__summary">
-                    <strong>{repository.fullName}</strong>
-                    <span>Default branch: {repository.defaultBranch}</span>
-                  </div>
-                  <span className="repository-list__badge">
-                    {repository.isActive ? 'Monitoring active' : 'Paused'}
-                  </span>
-                </li>
-              ))}
+              {monitoredRepositories.map((repository) => {
+                const isSelected = repository.id === selectedRepositoryId;
+
+                return (
+                  <li key={repository.id} className="repository-list__item">
+                    <div className="repository-list__summary">
+                      <strong>{repository.fullName}</strong>
+                      <span>Default branch: {repository.defaultBranch}</span>
+                    </div>
+                    <div className="repository-list__actions">
+                      <span className="repository-list__badge">
+                        {repository.isActive ? 'Monitoring active' : 'Paused'}
+                      </span>
+                      <Button
+                        variant={isSelected ? 'secondary' : 'primary'}
+                        onClick={() => setSelectedRepositoryId(repository.id)}
+                      >
+                        {isSelected ? 'Viewing workflows' : 'View workflows'}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
@@ -251,6 +304,60 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
           )}
         </Card>
       </div>
+
+      <Card
+        eyebrow="Workflow catalog"
+        title={
+          selectedRepository
+            ? `Workflow catalog for ${selectedRepository.fullName}`
+            : 'Workflow catalog'
+        }
+      >
+        {!hasAccessToken ? (
+          <p className="empty-state">
+            Add an operator token to inspect workflow catalogs for monitored repositories.
+          </p>
+        ) : monitoredRepositoriesQuery.isLoading ? (
+          <p className="empty-state">Loading repositories before fetching the workflow catalog...</p>
+        ) : monitoredRepositories.length === 0 ? (
+          <p className="empty-state">
+            Connect a repository first so ForgeOps can show its workflow catalog.
+          </p>
+        ) : !selectedRepository ? (
+          <p className="empty-state">
+            Select a monitored repository to inspect the current workflow catalog.
+          </p>
+        ) : workflowsQuery.isLoading ? (
+          <p className="empty-state">Loading workflow catalog...</p>
+        ) : workflowsQuery.isError ? (
+          <p className="empty-state">
+            {getErrorMessage(workflowsQuery.error, 'Unable to load the workflow catalog.')}
+          </p>
+        ) : repositoryWorkflows.length === 0 ? (
+          <p className="empty-state">
+            ForgeOps has not cataloged workflows for this repository yet.
+          </p>
+        ) : (
+          <ul className="workflow-list">
+            {repositoryWorkflows.map((workflow) => (
+              <li key={workflow.id} className="workflow-list__item">
+                <div className="workflow-list__summary">
+                  <strong>{workflow.name}</strong>
+                  <span>{workflow.path}</span>
+                </div>
+                <div className="workflow-list__meta">
+                  <span className="repository-list__badge">
+                    {workflow.sourceType === 'reusable' ? 'Reusable' : 'Local'}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    {workflow.state}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }
