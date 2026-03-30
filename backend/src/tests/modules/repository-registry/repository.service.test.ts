@@ -4,6 +4,7 @@ import type {
   Repository,
 } from '../../../modules/repository-registry/repository.entity.js';
 import type { GitHubInstallationRepository } from '../../../modules/github/github-app.boundary.js';
+import { GitHubWorkflowCatalogSyncError } from '../../../modules/github/github-app.errors.js';
 import { RepositoryAlreadyExistsError } from '../../../modules/repository-registry/repository.errors.js';
 import { RepositoryService } from '../../../modules/repository-registry/repository.service.js';
 
@@ -70,6 +71,7 @@ describe('RepositoryService', () => {
         list,
         create,
         findById: vi.fn(),
+        deleteById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -111,6 +113,7 @@ describe('RepositoryService', () => {
         list,
         create,
         findById: vi.fn(),
+        deleteById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -126,6 +129,9 @@ describe('RepositoryService', () => {
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows: async () => [],
       },
+      workflowCatalogSync: {
+        syncByRepositoryId: vi.fn().mockResolvedValue([]),
+      },
       logger,
     });
 
@@ -137,6 +143,7 @@ describe('RepositoryService', () => {
         repositoryId: 'repo_123',
         githubRepoId: '123456789',
         fullName: 'forgeops/backend',
+        syncedWorkflowCount: 0,
       },
       'Repository ingestion completed.',
     );
@@ -153,6 +160,7 @@ describe('RepositoryService', () => {
         list: vi.fn(),
         create: vi.fn().mockRejectedValue(new RepositoryAlreadyExistsError()),
         findById: vi.fn(),
+        deleteById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -168,6 +176,9 @@ describe('RepositoryService', () => {
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows: async () => [],
       },
+      workflowCatalogSync: {
+        syncByRepositoryId: vi.fn(),
+      },
       logger,
     });
 
@@ -178,6 +189,7 @@ describe('RepositoryService', () => {
     expect(logger.error).toHaveBeenCalledWith(
       {
         event: 'repository_ingestion_failed',
+        repositoryId: undefined,
         githubRepoId: '123456789',
         fullName: 'forgeops/backend',
         errorCode: 'repository_already_exists',
@@ -186,6 +198,59 @@ describe('RepositoryService', () => {
       'Repository ingestion failed.',
     );
     expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it('should roll back the repository when workflow sync fails after creation', async () => {
+    const deleteById = vi.fn().mockResolvedValue(undefined);
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+    const service = new RepositoryService({
+      repository: {
+        list: vi.fn(),
+        create: vi.fn().mockResolvedValue(buildRepository()),
+        findById: vi.fn(),
+        deleteById,
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+      },
+      workflowCatalogSync: {
+        syncByRepositoryId: vi
+          .fn()
+          .mockRejectedValue(new GitHubWorkflowCatalogSyncError()),
+      },
+      logger,
+    });
+
+    await expect(service.create(buildCreateInput())).rejects.toBeInstanceOf(
+      GitHubWorkflowCatalogSyncError,
+    );
+
+    expect(deleteById).toHaveBeenCalledWith('repo_123');
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        event: 'repository_ingestion_failed',
+        repositoryId: 'repo_123',
+        githubRepoId: '123456789',
+        fullName: 'forgeops/backend',
+        errorCode: 'github_workflow_catalog_unavailable',
+        errorStatusCode: 503,
+      },
+      'Repository ingestion failed.',
+    );
   });
 
   it('should delegate repository discovery to the GitHub boundary', async () => {
@@ -207,6 +272,7 @@ describe('RepositoryService', () => {
         list,
         create,
         findById: vi.fn(),
+        deleteById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',

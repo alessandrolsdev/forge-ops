@@ -35,6 +35,11 @@ type RepositoryDelegate = {
       id: string;
     };
   }): Promise<RepositoryRecord | null>;
+  delete(args: {
+    where: {
+      id: string;
+    };
+  }): Promise<RepositoryRecord>;
 };
 
 const isUniqueConstraintError = (error: unknown): boolean => {
@@ -104,5 +109,13 @@ export class PrismaRepositoryRepository implements RepositoryRepository {
     });
 
     return record ? toRepository(record) : null;
+  }
+
+  async deleteById(id: string): Promise<void> {
+    await this.repository.delete({
+      where: {
+        id,
+      },
+    });
   }
 }
