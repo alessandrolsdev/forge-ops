@@ -13,7 +13,14 @@ export interface WorkflowServiceOptions {
 export class WorkflowService {
   constructor(private readonly options: WorkflowServiceOptions) {}
 
-  listByRepositoryId(repositoryId: string): Promise<Workflow[]> {
+  async listByRepositoryId(repositoryId: string): Promise<Workflow[]> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
     return this.options.workflowRepository.listByRepositoryId(repositoryId);
   }
 
