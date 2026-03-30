@@ -67,11 +67,13 @@ export const createServer = (options: CreateServerOptions) => {
   const repositoryService = new RepositoryService({
     repository: repositoryRegistryRepository,
     githubBoundary,
+    logger: app.log,
   });
   const workflowService = new WorkflowService({
     repositoryRegistryRepository,
     workflowRepository: workflowCatalogRepository,
     githubBoundary,
+    logger: app.log,
   });
 
   if (prismaClient) {
