@@ -25,6 +25,7 @@ describe('RepositoriesView', () => {
       getHealth: vi.fn(),
       getRepositories: vi.fn(),
       getRepositoryDiscovery: vi.fn(),
+      getRepositoryWorkflows: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -40,8 +41,84 @@ describe('RepositoriesView', () => {
         'Add an operator token to query repository discovery through the backend.',
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Add an operator token to inspect workflow catalogs for monitored repositories.',
+      ),
+    ).toBeInTheDocument();
     expect(client.getRepositories).not.toHaveBeenCalled();
     expect(client.getRepositoryDiscovery).not.toHaveBeenCalled();
+    expect(client.getRepositoryWorkflows).not.toHaveBeenCalled();
+  });
+
+  it('should load repository workflows for the selected monitored repository', async () => {
+    const getRepositories = vi
+      .fn<ForgeOpsApiClient['getRepositories']>()
+      .mockResolvedValue([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]);
+    const getRepositoryDiscovery = vi
+      .fn<ForgeOpsApiClient['getRepositoryDiscovery']>()
+      .mockResolvedValue([
+        {
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isPrivate: true,
+        },
+      ]);
+    const getRepositoryWorkflows = vi
+      .fn<ForgeOpsApiClient['getRepositoryWorkflows']>()
+      .mockResolvedValue([
+        {
+          id: 'workflow_123',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+          name: 'CI',
+          path: '.github/workflows/ci.yml',
+          state: 'active',
+          sourceType: 'local',
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]);
+    const createRepository = vi.fn<ForgeOpsApiClient['createRepository']>();
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories,
+      getRepositoryDiscovery,
+      getRepositoryWorkflows,
+      createRepository,
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Workflow catalog for forgeops/backend'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('.github/workflows/ci.yml')).toBeInTheDocument();
+      expect(screen.getByText('Viewing workflows')).toBeInTheDocument();
+    });
+
+    expect(getRepositoryWorkflows).toHaveBeenCalledWith('trusted-token', 'repo_123');
   });
 
   it('should load discovery and connect a repository through the backend client', async () => {
@@ -73,6 +150,21 @@ describe('RepositoriesView', () => {
           isPrivate: true,
         },
       ]);
+    const getRepositoryWorkflows = vi
+      .fn<ForgeOpsApiClient['getRepositoryWorkflows']>()
+      .mockResolvedValue([
+        {
+          id: 'workflow_123',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+          name: 'CI',
+          path: '.github/workflows/ci.yml',
+          state: 'active',
+          sourceType: 'local',
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]);
     const createRepository = vi
       .fn<ForgeOpsApiClient['createRepository']>()
       .mockResolvedValue({
@@ -90,6 +182,7 @@ describe('RepositoriesView', () => {
       getHealth: vi.fn(),
       getRepositories,
       getRepositoryDiscovery,
+      getRepositoryWorkflows,
       createRepository,
     };
 
@@ -131,6 +224,7 @@ describe('RepositoriesView', () => {
         .mockRejectedValue(
           new ApiClientError('GitHub repository discovery is currently unavailable.', 503),
         ),
+      getRepositoryWorkflows: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -178,6 +272,7 @@ describe('RepositoriesView', () => {
           isPrivate: true,
         },
       ]),
+      getRepositoryWorkflows: vi.fn().mockResolvedValue([]),
       createRepository: vi
         .fn()
         .mockRejectedValue(
@@ -202,6 +297,43 @@ describe('RepositoriesView', () => {
       expect(screen.getByText('Repository is already monitored.')).toBeInTheDocument();
       expect(screen.getByText('Already monitored')).toBeInTheDocument();
       expect(getRepositories).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('should surface workflow catalog errors clearly for the selected repository', async () => {
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories: vi.fn().mockResolvedValue([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getRepositoryDiscovery: vi.fn().mockResolvedValue([]),
+      getRepositoryWorkflows: vi
+        .fn()
+        .mockRejectedValue(
+          new ApiClientError('Repository was not found.', 404, 'repository_not_found'),
+        ),
+      createRepository: vi.fn(),
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Repository was not found.')).toBeInTheDocument();
     });
   });
 });
