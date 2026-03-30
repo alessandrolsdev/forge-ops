@@ -16,6 +16,9 @@ import { HealthService } from '../modules/health/health.service.js';
 import { PrismaRepositoryRepository } from '../modules/repository-registry/repository.prisma-repository.js';
 import type { RepositoryRepository } from '../modules/repository-registry/repository.repository.js';
 import { RepositoryService } from '../modules/repository-registry/repository.service.js';
+import { PrismaWorkflowRepository } from '../modules/workflow-catalog/workflow.prisma-repository.js';
+import type { WorkflowRepository } from '../modules/workflow-catalog/workflow.repository.js';
+import { WorkflowService } from '../modules/workflow-catalog/workflow.service.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 export interface CreateServerOptions {
@@ -25,6 +28,7 @@ export interface CreateServerOptions {
   githubConfig?: GitHubAppEnv | null;
   githubBoundary?: GitHubAppBoundary;
   repositoryRegistryRepository?: RepositoryRepository;
+  workflowCatalogRepository?: WorkflowRepository;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -41,9 +45,10 @@ export const createServer = (options: CreateServerOptions) => {
     }),
   );
 
-  const prismaClient = options.repositoryRegistryRepository
-    ? null
-    : createPrismaClient();
+  const prismaClient =
+    options.repositoryRegistryRepository && options.workflowCatalogRepository
+      ? null
+      : createPrismaClient();
   const githubBoundary =
     options.githubBoundary ?? createGitHubAppBoundary(options.githubConfig ?? null);
   const healthRepository = new StaticHealthRepository({
@@ -52,12 +57,20 @@ export const createServer = (options: CreateServerOptions) => {
   const repositoryRegistryRepository =
     options.repositoryRegistryRepository ??
     new PrismaRepositoryRepository(prismaClient!.repository);
+  const workflowCatalogRepository =
+    options.workflowCatalogRepository ??
+    new PrismaWorkflowRepository(prismaClient!.workflow);
   const healthService = new HealthService({
     githubBoundary,
     repository: healthRepository,
   });
   const repositoryService = new RepositoryService({
     repository: repositoryRegistryRepository,
+    githubBoundary,
+  });
+  const workflowService = new WorkflowService({
+    repositoryRegistryRepository,
+    workflowRepository: workflowCatalogRepository,
     githubBoundary,
   });
 
@@ -71,6 +84,7 @@ export const createServer = (options: CreateServerOptions) => {
   registerRoutes(app, {
     healthService,
     repositoryService,
+    workflowService,
   });
 
   return app;

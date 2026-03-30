@@ -10,10 +10,13 @@ import { registerAuthReferenceRoutes } from '../modules/auth/auth-reference.cont
 import { registerHealthRoutes } from '../modules/health/health.controller.js';
 import { registerRepositoryRegistryRoutes } from '../modules/repository-registry/repository.controller.js';
 import type { RepositoryService } from '../modules/repository-registry/repository.service.js';
+import { registerWorkflowCatalogRoutes } from '../modules/workflow-catalog/workflow.controller.js';
+import type { WorkflowService } from '../modules/workflow-catalog/workflow.service.js';
 
 interface RegisterRoutesOptions {
   healthService: HealthService;
   repositoryService: RepositoryService;
+  workflowService: WorkflowService;
 }
 
 export type ForgeOpsFastifyInstance = FastifyInstance<
@@ -30,4 +33,5 @@ export const registerRoutes = (
   registerHealthRoutes(app, options.healthService);
   registerAuthReferenceRoutes(app);
   registerRepositoryRegistryRoutes(app, options.repositoryService);
+  registerWorkflowCatalogRoutes(app, options.workflowService);
 };

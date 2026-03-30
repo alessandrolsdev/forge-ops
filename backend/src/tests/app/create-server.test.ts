@@ -8,6 +8,7 @@ import type {
   Repository,
 } from '../../modules/repository-registry/repository.entity.js';
 import type { GitHubInstallationRepository } from '../../modules/github/github-app.boundary.js';
+import type { Workflow } from '../../modules/workflow-catalog/workflow.entity.js';
 
 const buildRepository = (
   overrides: Partial<Repository> = {},
@@ -55,14 +56,33 @@ const buildInstallationRepository = (
   };
 };
 
+const buildWorkflow = (overrides: Partial<Workflow> = {}): Workflow => {
+  const createdAt = new Date('2026-03-30T15:10:00.000Z');
+
+  return {
+    id: 'workflow_123',
+    repositoryId: 'repo_123',
+    githubWorkflowId: 'workflow-gh-123',
+    name: 'CI',
+    path: '.github/workflows/ci.yml',
+    state: 'active',
+    sourceType: 'local',
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  };
+};
+
 const createProtectedServer = (overrides?: {
   repositories?: Repository[];
+  workflows?: Workflow[];
   createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
   installationRepositories?: GitHubInstallationRepository[];
   installationDiscoveryError?: Error;
   capabilities?: string[];
 }) => {
   const repositories = overrides?.repositories ?? [];
+  const workflows = overrides?.workflows ?? [];
 
   return createServer({
     env: {
@@ -122,6 +142,20 @@ const createProtectedServer = (overrides?: {
             defaultBranch: input.defaultBranch,
             isActive: input.isActive ?? true,
           })),
+    },
+    workflowCatalogRepository: {
+      create: async () => buildWorkflow(),
+      upsert: async (input) =>
+        buildWorkflow({
+          repositoryId: input.repositoryId,
+          githubWorkflowId: input.githubWorkflowId,
+          name: input.name,
+          path: input.path,
+          state: input.state,
+          sourceType: input.sourceType,
+        }),
+      listByRepositoryId: async (repositoryId) =>
+        workflows.filter((workflow) => workflow.repositoryId === repositoryId),
     },
   });
 };
@@ -662,6 +696,127 @@ describe('createServer', () => {
         code: 'github_repository_discovery_unavailable',
         message: 'GitHub repository discovery is currently unavailable.',
       },
+    });
+
+    await server.close();
+  });
+
+  it('should keep workflow catalog routes protected', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/workflows',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'authentication_required',
+        message: 'Authentication is required.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should reject invalid workflow catalog route params before service execution', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/%20/workflows',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'validation_error',
+        message: 'String must contain at least 1 character(s)',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return not found when the workflow catalog repository does not exist', async () => {
+    const server = createProtectedServer();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_missing/workflows',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'repository_not_found',
+        message: 'Repository was not found.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should list workflow catalog entries for an authenticated operator', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [
+        buildWorkflow(),
+        buildWorkflow({
+          id: 'workflow_456',
+          githubWorkflowId: 'workflow-gh-456',
+          name: 'Deploy',
+          path: '.github/workflows/deploy.yml',
+          sourceType: 'reusable',
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/workflows',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      workflows: [
+        {
+          id: 'workflow_123',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+          name: 'CI',
+          path: '.github/workflows/ci.yml',
+          state: 'active',
+          sourceType: 'local',
+          createdAt: '2026-03-30T15:10:00.000Z',
+          updatedAt: '2026-03-30T15:10:00.000Z',
+        },
+        {
+          id: 'workflow_456',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-456',
+          name: 'Deploy',
+          path: '.github/workflows/deploy.yml',
+          state: 'active',
+          sourceType: 'reusable',
+          createdAt: '2026-03-30T15:10:00.000Z',
+          updatedAt: '2026-03-30T15:10:00.000Z',
+        },
+      ],
     });
 
     await server.close();
