@@ -4,6 +4,7 @@ import type { GitHubAppBoundary } from '../github/github-app.boundary.js';
 import { RepositoryNotFoundError } from '../repository-registry/repository.errors.js';
 import type { RepositoryRepository } from '../repository-registry/repository.repository.js';
 import type { WorkflowRepository } from '../workflow-catalog/workflow.repository.js';
+import { WorkflowNotFoundError } from '../workflow-catalog/workflow.errors.js';
 import type { WorkflowRun } from './workflow-run.entity.js';
 import type { WorkflowRunRepository } from './workflow-run.repository.js';
 
@@ -24,6 +25,23 @@ export interface WorkflowRunServiceOptions {
 
 export class WorkflowRunService {
   constructor(private readonly options: WorkflowRunServiceOptions) {}
+
+  async listByWorkflowId(repositoryId: string, workflowId: string): Promise<WorkflowRun[]> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
+    const workflow = await this.options.workflowRepository.findById(workflowId);
+
+    if (!workflow || workflow.repositoryId !== repositoryId) {
+      throw new WorkflowNotFoundError();
+    }
+
+    return this.options.workflowRunRepository.listRunsByWorkflowId(workflowId);
+  }
 
   async syncByRepositoryId(repositoryId: string): Promise<WorkflowRun[]> {
     const repository =

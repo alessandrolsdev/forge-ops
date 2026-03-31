@@ -45,6 +45,7 @@ describe('PrismaWorkflowRepository', () => {
       create,
       upsert,
       findMany,
+      findUnique: vi.fn(),
     });
 
     await expect(
@@ -90,6 +91,7 @@ describe('PrismaWorkflowRepository', () => {
       create,
       upsert,
       findMany,
+      findUnique: vi.fn(),
     });
 
     await expect(repository.listByRepositoryId('repo_123')).resolves.toEqual([
@@ -116,6 +118,27 @@ describe('PrismaWorkflowRepository', () => {
     });
   });
 
+  it('should find a workflow by id', async () => {
+    const create = vi.fn();
+    const upsert = vi.fn();
+    const findMany = vi.fn();
+    const findUnique = vi.fn().mockResolvedValue(buildRecord());
+    const repository = new PrismaWorkflowRepository({
+      create,
+      upsert,
+      findMany,
+      findUnique,
+    });
+
+    await expect(repository.findById('workflow_123')).resolves.toEqual(buildRecord());
+
+    expect(findUnique).toHaveBeenCalledWith({
+      where: {
+        id: 'workflow_123',
+      },
+    });
+  });
+
   it('should translate unique constraint errors into a domain conflict', async () => {
     const create = vi.fn().mockRejectedValue({ code: 'P2002' });
     const findMany = vi.fn();
@@ -124,6 +147,7 @@ describe('PrismaWorkflowRepository', () => {
       create,
       upsert,
       findMany,
+      findUnique: vi.fn(),
     });
 
     await expect(
@@ -146,6 +170,7 @@ describe('PrismaWorkflowRepository', () => {
       create,
       upsert,
       findMany,
+      findUnique: vi.fn(),
     });
 
     await expect(
