@@ -85,7 +85,6 @@ export class WorkflowRunService {
       jobs,
     };
   }
-
   async syncByRepositoryId(repositoryId: string): Promise<WorkflowRun[]> {
     const repository =
       await this.options.repositoryRegistryRepository.findById(repositoryId);

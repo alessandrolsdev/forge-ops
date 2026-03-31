@@ -14,7 +14,6 @@ const workflowRunDetailParamsSchema = z.object({
   workflowId: z.string().trim().min(1),
   workflowRunId: z.string().trim().min(1),
 });
-
 interface WorkflowRunResponse {
   id: string;
   workflowId: string;
@@ -63,7 +62,6 @@ interface WorkflowJobResponse {
   createdAt: string;
   updatedAt: string;
 }
-
 interface ListWorkflowRunsRoute extends RouteGenericInterface {
   Params: {
     repositoryId: string;
@@ -85,7 +83,6 @@ interface GetWorkflowRunDetailRoute extends RouteGenericInterface {
     jobs: WorkflowJobResponse[];
   };
 }
-
 const toWorkflowRunResponse = (workflowRun: WorkflowRun): WorkflowRunResponse => {
   return {
     id: workflowRun.id,
@@ -118,7 +115,6 @@ const toWorkflowJobResponse = (workflowJob: WorkflowJob): WorkflowJobResponse =>
     updatedAt: workflowJob.updatedAt.toISOString(),
   };
 };
-
 export const registerWorkflowRunRoutes = (
   app: ForgeOpsFastifyInstance,
   workflowRunService: WorkflowRunService,
