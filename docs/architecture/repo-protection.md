@@ -29,6 +29,8 @@
 - Gate automatic `@codex review` requests behind repository variable `CODEX_REVIEW_ENABLED=true`.
 - Enable `CODEX_REVIEW_ENABLED` only after confirming that the maintainer account used for PR review is connected to GitHub in Codex and a manual `@codex review` produces an actual review.
 - If Codex is not enabled or not connected yet, the workflow must post a fallback comment that makes the lack of automatic review explicit and reminds reviewers that human review remains mandatory.
+- Keep the workflow text structure versioned under `.github/prompts/` so prompt, readiness, fallback, and marker changes are reviewable outside the YAML orchestration.
+- The automated Codex review prompt should require the response in Portuguese (Brazil).
 - The Codex review request should focus on:
   - security-sensitive changes and secret handling
   - scope alignment with the linked issue and acceptance criteria
