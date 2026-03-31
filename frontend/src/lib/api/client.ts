@@ -90,10 +90,43 @@ const workflowCatalogResponseSchema = z.object({
   workflows: z.array(workflowCatalogItemSchema),
 });
 
+const workflowRunItemSchema = z.object({
+  id: z.string().min(1),
+  workflowId: z.string().min(1),
+  githubRunId: z.string().min(1),
+  status: z.enum(['queued', 'in_progress', 'completed', 'pending', 'waiting', 'requested']),
+  conclusion: z
+    .enum([
+      'success',
+      'failure',
+      'neutral',
+      'cancelled',
+      'skipped',
+      'timed_out',
+      'action_required',
+      'stale',
+      'startup_failure',
+    ])
+    .nullable(),
+  branch: z.string().min(1),
+  sha: z.string().min(1),
+  event: z.string().min(1),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+const workflowRunsResponseSchema = z.object({
+  runs: z.array(workflowRunItemSchema),
+});
+
 export type MonitoredRepository = z.infer<typeof monitoredRepositorySchema>;
 export type RepositoryDiscoveryItem = z.infer<typeof repositoryDiscoveryItemSchema>;
 export type CreateRepositoryInput = z.infer<typeof createRepositoryInputSchema>;
 export type WorkflowCatalogItem = z.infer<typeof workflowCatalogItemSchema>;
+export type WorkflowRunItem = z.infer<typeof workflowRunItemSchema>;
 
 interface CreateApiClientOptions {
   baseUrl?: string;
@@ -121,6 +154,11 @@ export interface ForgeOpsApiClient {
     accessToken: string,
     repositoryId: string,
   ): Promise<WorkflowCatalogItem[]>;
+  getWorkflowRuns(
+    accessToken: string,
+    repositoryId: string,
+    workflowId: string,
+  ): Promise<WorkflowRunItem[]>;
   createRepository(
     accessToken: string,
     input: CreateRepositoryInput,
@@ -206,6 +244,25 @@ export const createApiClient = (options: CreateApiClientOptions = {}): ForgeOpsA
       }
 
       return workflowCatalogResponseSchema.parse(await response.json()).workflows;
+    },
+
+    async getWorkflowRuns(
+      accessToken: string,
+      repositoryId: string,
+      workflowId: string,
+    ): Promise<WorkflowRunItem[]> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/workflows/${workflowId}/runs`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(response, `Failed to fetch workflow runs (${response.status})`);
+      }
+
+      return workflowRunsResponseSchema.parse(await response.json()).runs;
     },
 
     async createRepository(
