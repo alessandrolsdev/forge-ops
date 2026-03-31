@@ -3,6 +3,10 @@ import {
   GitHubAppProvider,
   type GitHubAppProviderOptions,
 } from './providers/github-app.provider.js';
+import type {
+  WorkflowExecutionConclusion,
+  WorkflowExecutionStatus,
+} from '../workflow-runs/workflow-run.entity.js';
 
 export interface GitHubRepositoryDescriptor {
   owner: string;
@@ -31,6 +35,27 @@ export interface GitHubWorkflowDescriptor {
   sourceType: 'local' | 'reusable';
 }
 
+export interface GitHubWorkflowRunDescriptor {
+  githubRunId: string;
+  status: WorkflowExecutionStatus;
+  conclusion: WorkflowExecutionConclusion | null;
+  branch: string;
+  sha: string;
+  event: string;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  durationMs: number | null;
+}
+
+export interface GitHubWorkflowJobDescriptor {
+  githubJobId: string;
+  name: string;
+  status: WorkflowExecutionStatus;
+  conclusion: WorkflowExecutionConclusion | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+}
+
 export interface GitHubAppBoundary {
   readonly mode: 'github-app';
   readonly configured: boolean;
@@ -40,6 +65,14 @@ export interface GitHubAppBoundary {
   listRepositoryWorkflows(
     repository: GitHubRepositoryDescriptor,
   ): Promise<GitHubWorkflowDescriptor[]>;
+  listWorkflowRuns(
+    repository: GitHubRepositoryDescriptor,
+    workflowId: string,
+  ): Promise<GitHubWorkflowRunDescriptor[]>;
+  listWorkflowRunJobs(
+    repository: GitHubRepositoryDescriptor,
+    workflowRunId: string,
+  ): Promise<GitHubWorkflowJobDescriptor[]>;
 }
 
 export interface GitHubAppStatus {
