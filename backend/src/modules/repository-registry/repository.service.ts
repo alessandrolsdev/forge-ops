@@ -14,6 +14,9 @@ type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 type WorkflowCatalogSync = {
   syncByRepositoryId(repositoryId: string): Promise<unknown[]>;
 };
+type WorkflowRunSync = {
+  syncByRepositoryId(repositoryId: string): Promise<unknown[]>;
+};
 
 const noopLogger: ServiceLogger = {
   info: () => undefined,
@@ -24,6 +27,7 @@ export interface RepositoryServiceOptions {
   repository: RepositoryRepository;
   githubBoundary: GitHubAppBoundary;
   workflowCatalogSync?: WorkflowCatalogSync;
+  workflowRunSync?: WorkflowRunSync;
   logger?: ServiceLogger;
 }
 
@@ -38,9 +42,13 @@ export class RepositoryService {
     try {
       const repository = await this.options.repository.create(input);
       let syncedWorkflows: unknown[] | undefined;
+      let syncedWorkflowRuns: unknown[] | undefined;
 
       try {
         syncedWorkflows = await this.options.workflowCatalogSync?.syncByRepositoryId(
+          repository.id,
+        );
+        syncedWorkflowRuns = await this.options.workflowRunSync?.syncByRepositoryId(
           repository.id,
         );
       } catch (error) {
@@ -57,6 +65,7 @@ export class RepositoryService {
           githubRepoId: repository.githubRepoId,
           fullName: repository.fullName,
           syncedWorkflowCount: syncedWorkflows?.length ?? 0,
+          syncedWorkflowRunCount: syncedWorkflowRuns?.length ?? 0,
         },
         'Repository ingestion completed.',
       );
