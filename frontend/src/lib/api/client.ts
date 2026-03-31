@@ -122,11 +122,43 @@ const workflowRunsResponseSchema = z.object({
   runs: z.array(workflowRunItemSchema),
 });
 
+const workflowRunJobItemSchema = z.object({
+  id: z.string().min(1),
+  workflowRunId: z.string().min(1),
+  githubJobId: z.string().min(1),
+  name: z.string().min(1),
+  status: z.enum(['queued', 'in_progress', 'completed', 'pending', 'waiting', 'requested']),
+  conclusion: z
+    .enum([
+      'success',
+      'failure',
+      'neutral',
+      'cancelled',
+      'skipped',
+      'timed_out',
+      'action_required',
+      'stale',
+      'startup_failure',
+    ])
+    .nullable(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+const workflowRunDetailResponseSchema = z.object({
+  run: workflowRunItemSchema,
+  jobs: z.array(workflowRunJobItemSchema),
+});
+
 export type MonitoredRepository = z.infer<typeof monitoredRepositorySchema>;
 export type RepositoryDiscoveryItem = z.infer<typeof repositoryDiscoveryItemSchema>;
 export type CreateRepositoryInput = z.infer<typeof createRepositoryInputSchema>;
 export type WorkflowCatalogItem = z.infer<typeof workflowCatalogItemSchema>;
 export type WorkflowRunItem = z.infer<typeof workflowRunItemSchema>;
+export type WorkflowRunJobItem = z.infer<typeof workflowRunJobItemSchema>;
+export type WorkflowRunDetailResponse = z.infer<typeof workflowRunDetailResponseSchema>;
 
 interface CreateApiClientOptions {
   baseUrl?: string;
@@ -159,6 +191,12 @@ export interface ForgeOpsApiClient {
     repositoryId: string,
     workflowId: string,
   ): Promise<WorkflowRunItem[]>;
+  getWorkflowRunDetail(
+    accessToken: string,
+    repositoryId: string,
+    workflowId: string,
+    workflowRunId: string,
+  ): Promise<WorkflowRunDetailResponse>;
   createRepository(
     accessToken: string,
     input: CreateRepositoryInput,
@@ -263,6 +301,29 @@ export const createApiClient = (options: CreateApiClientOptions = {}): ForgeOpsA
       }
 
       return workflowRunsResponseSchema.parse(await response.json()).runs;
+    },
+
+    async getWorkflowRunDetail(
+      accessToken: string,
+      repositoryId: string,
+      workflowId: string,
+      workflowRunId: string,
+    ): Promise<WorkflowRunDetailResponse> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/workflows/${workflowId}/runs/${workflowRunId}`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch workflow run detail (${response.status})`,
+        );
+      }
+
+      return workflowRunDetailResponseSchema.parse(await response.json());
     },
 
     async createRepository(
