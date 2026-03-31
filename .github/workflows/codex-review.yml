@@ -32,20 +32,51 @@ jobs:
         run: |
           echo "Codex review is skipped for fork pull requests to avoid exposing review automation to untrusted contexts."
 
-      - name: Request Codex review
+      - name: Publish Codex review status
         if: ${{ !github.event.pull_request.head.repo.fork }}
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          CODEX_REVIEW_ENABLED: ${{ vars.CODEX_REVIEW_ENABLED }}
         with:
           script: |
             const marker = '<!-- forgeops-codex-review -->';
-            const body = [
-              marker,
-              '@codex review',
-              '',
-              `Requested automatically for commit ${context.payload.pull_request.head.sha}.`,
-              '',
-              'If this PR is not connected to Codex review yet, keep this workflow green and finish with human review.'
+            const codexReviewEnabled = process.env.CODEX_REVIEW_ENABLED === 'true';
+            const reviewFocus = [
+              '- security-sensitive changes and secret handling',
+              '- scope alignment with the linked issue and stated acceptance criteria',
+              '- tests added or updated, plus missing coverage',
+              '- behavioural regressions or edge cases',
+              '- architectural boundaries and layering',
+              '- TypeScript typing safety and unsafe relaxations',
+              '- residual risks and follow-up items',
             ].join('\n');
+            const body = codexReviewEnabled
+              ? [
+                  marker,
+                  '@codex review',
+                  '',
+                  `Requested automatically for commit ${context.payload.pull_request.head.sha}.`,
+                  '',
+                  'Review focus:',
+                  reviewFocus,
+                  '',
+                  'If Codex does not respond with an actual review, keep this check advisory and finish with human review.',
+                ].join('\n')
+              : [
+                  marker,
+                  'Codex review automation is configured as advisory, but it is not enabled for this repository yet.',
+                  '',
+                  `No automatic Codex review was requested for commit ${context.payload.pull_request.head.sha}.`,
+                  '',
+                  'Human review remains required.',
+                  '',
+                  'Enable this workflow only after confirming that the maintainer account used for PR review is connected to GitHub in Codex and a manual `@codex review` works.',
+                  '',
+                  'Then set repository variable `CODEX_REVIEW_ENABLED=true`.',
+                  '',
+                  'Expected Codex review focus:',
+                  reviewFocus,
+                ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
