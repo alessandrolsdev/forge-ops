@@ -111,11 +111,15 @@ jobs:
           response_path="$RUNNER_TEMP/codex-review/response.json"
           review_path="$RUNNER_TEMP/codex-review/review.md"
           prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
+          diff_path="$PR_CONTEXT_DIR/pr.diff"
+
+          echo "Prompt size (bytes): $(wc -c < "$prompt_path")"
+          echo "PR diff size (bytes): $(wc -c < "$diff_path")"
 
           jq -n \
             --rawfile prompt "$prompt_path" \
             --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
-            --rawfile diff "$PR_CONTEXT_DIR/pr.diff" \
+            --rawfile diff "$diff_path" \
             '{
               model: "gpt-5.4",
               store: false,
@@ -164,9 +168,30 @@ jobs:
             exit 0
           fi
 
-          jq -r '[.output[]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text] | join("\n\n")' "$response_path" > "$review_path"
+          echo "OpenAI API raw response:"
+          cat "$response_path"
+
+          jq -r '
+            def output_text:
+              if type == "string" then
+                .
+              elif type == "object" then
+                .value // empty
+              else
+                empty
+              end;
+
+            [
+              .output[0]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text | output_text,
+              .output[]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text | output_text
+            ]
+            | map(select(length > 0))
+            | unique
+            | join("\n\n")
+          ' "$response_path" > "$review_path"
 
           if [ ! -s "$review_path" ] || [ "$(cat "$review_path")" = "null" ]; then
+            echo "OpenAI review parsing produced no usable text output."
             echo "status=failed" >> "$GITHUB_OUTPUT"
             exit 0
           fi
