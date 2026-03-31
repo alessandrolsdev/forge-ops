@@ -30,6 +30,16 @@ export class GitHubWorkflowRunsSyncError extends ApplicationError {
   }
 }
 
+export class GitHubPullRequestSyncError extends ApplicationError {
+  constructor() {
+    super(
+      'GitHub pull requests are currently unavailable.',
+      503,
+      'github_pull_request_sync_unavailable',
+    );
+  }
+}
+
 export class GitHubWebhookVerificationError extends ApplicationError {
   constructor() {
     super(

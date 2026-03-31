@@ -22,6 +22,9 @@ import { WorkflowService } from '../modules/workflow-catalog/workflow.service.js
 import { PrismaWorkflowRunRepository } from '../modules/workflow-runs/workflow-run.prisma-repository.js';
 import type { WorkflowRunRepository } from '../modules/workflow-runs/workflow-run.repository.js';
 import { WorkflowRunService } from '../modules/workflow-runs/workflow-run.service.js';
+import { PrismaPullRequestRepository } from '../modules/pull-request-insights/pull-request.prisma-repository.js';
+import type { PullRequestRepository } from '../modules/pull-request-insights/pull-request.repository.js';
+import { PullRequestService } from '../modules/pull-request-insights/pull-request.service.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 export interface CreateServerOptions {
@@ -33,6 +36,7 @@ export interface CreateServerOptions {
   repositoryRegistryRepository?: RepositoryRepository;
   workflowCatalogRepository?: WorkflowRepository;
   workflowRunRepository?: WorkflowRunRepository;
+  pullRequestRepository?: PullRequestRepository;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -52,7 +56,8 @@ export const createServer = (options: CreateServerOptions) => {
   const prismaClient =
     options.repositoryRegistryRepository &&
     options.workflowCatalogRepository &&
-    options.workflowRunRepository
+    options.workflowRunRepository &&
+    options.pullRequestRepository
       ? null
       : createPrismaClient();
   const githubBoundary =
@@ -72,6 +77,9 @@ export const createServer = (options: CreateServerOptions) => {
       workflowRun: prismaClient!.workflowRun,
       workflowJob: prismaClient!.workflowJob,
     });
+  const pullRequestRepository =
+    options.pullRequestRepository ??
+    new PrismaPullRequestRepository(prismaClient!.pullRequest);
   const healthService = new HealthService({
     githubBoundary,
     repository: healthRepository,
@@ -89,11 +97,18 @@ export const createServer = (options: CreateServerOptions) => {
     githubBoundary,
     logger: app.log,
   });
+  const pullRequestService = new PullRequestService({
+    repositoryRegistryRepository,
+    pullRequestRepository,
+    githubBoundary,
+    logger: app.log,
+  });
   const repositoryService = new RepositoryService({
     repository: repositoryRegistryRepository,
     githubBoundary,
     workflowCatalogSync: workflowService,
     workflowRunSync: workflowRunService,
+    pullRequestSync: pullRequestService,
     logger: app.log,
   });
 

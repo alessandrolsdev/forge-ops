@@ -3,6 +3,7 @@ import {
   GitHubAppProvider,
   type GitHubAppProviderOptions,
 } from './providers/github-app.provider.js';
+import type { PullRequestState } from '../pull-request-insights/pull-request.entity.js';
 import type {
   WorkflowExecutionConclusion,
   WorkflowExecutionStatus,
@@ -56,6 +57,16 @@ export interface GitHubWorkflowJobDescriptor {
   finishedAt: Date | null;
 }
 
+export interface GitHubPullRequestDescriptor {
+  githubPrId: string;
+  number: number;
+  title: string;
+  state: PullRequestState;
+  author: string;
+  baseBranch: string;
+  headBranch: string;
+}
+
 export interface GitHubAppBoundary {
   readonly mode: 'github-app';
   readonly configured: boolean;
@@ -73,6 +84,9 @@ export interface GitHubAppBoundary {
     repository: GitHubRepositoryDescriptor,
     workflowRunId: string,
   ): Promise<GitHubWorkflowJobDescriptor[]>;
+  listPullRequests(
+    repository: GitHubRepositoryDescriptor,
+  ): Promise<GitHubPullRequestDescriptor[]>;
 }
 
 export interface GitHubAppStatus {
