@@ -3,8 +3,10 @@ import { ApplicationError } from '../../shared/errors/application-error.js';
 import type { GitHubAppBoundary } from '../github/github-app.boundary.js';
 import { RepositoryNotFoundError } from '../repository-registry/repository.errors.js';
 import type { RepositoryRepository } from '../repository-registry/repository.repository.js';
+import { WorkflowNotFoundError } from '../workflow-catalog/workflow.errors.js';
 import type { WorkflowRepository } from '../workflow-catalog/workflow.repository.js';
-import type { WorkflowRun } from './workflow-run.entity.js';
+import type { WorkflowJob, WorkflowRun } from './workflow-run.entity.js';
+import { WorkflowRunNotFoundError } from './workflow-run.errors.js';
 import type { WorkflowRunRepository } from './workflow-run.repository.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
@@ -22,8 +24,67 @@ export interface WorkflowRunServiceOptions {
   logger?: ServiceLogger;
 }
 
+export interface WorkflowRunDetail {
+  run: WorkflowRun;
+  jobs: WorkflowJob[];
+}
+
 export class WorkflowRunService {
   constructor(private readonly options: WorkflowRunServiceOptions) {}
+
+  async listByWorkflowId(repositoryId: string, workflowId: string): Promise<WorkflowRun[]> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
+    const workflow = await this.options.workflowRepository.findById(workflowId);
+
+    if (!workflow || workflow.repositoryId !== repositoryId) {
+      throw new WorkflowNotFoundError();
+    }
+
+    return this.options.workflowRunRepository.listRunsByWorkflowId(workflowId);
+  }
+
+  async getDetailById(
+    repositoryId: string,
+    workflowId: string,
+    workflowRunId: string,
+  ): Promise<WorkflowRunDetail> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
+    const workflow = await this.options.workflowRepository.findById(workflowId);
+
+    if (!workflow || workflow.repositoryId !== repositoryId) {
+      throw new WorkflowNotFoundError();
+    }
+
+    const workflowRun = await this.options.workflowRunRepository.findRunById(
+      workflowRunId,
+    );
+
+    if (!workflowRun || workflowRun.workflowId !== workflowId) {
+      throw new WorkflowRunNotFoundError();
+    }
+
+    const jobs =
+      await this.options.workflowRunRepository.listJobsByWorkflowRunId(
+        workflowRun.id,
+      );
+
+    return {
+      run: workflowRun,
+      jobs,
+    };
+  }
 
   async syncByRepositoryId(repositoryId: string): Promise<WorkflowRun[]> {
     const repository =

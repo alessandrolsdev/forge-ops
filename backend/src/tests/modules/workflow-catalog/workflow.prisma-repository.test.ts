@@ -40,11 +40,13 @@ describe('PrismaWorkflowRepository', () => {
   it('should create and map a workflow record', async () => {
     const create = vi.fn().mockResolvedValue(buildRecord());
     const findMany = vi.fn();
+    const findUnique = vi.fn();
     const upsert = vi.fn();
     const repository = new PrismaWorkflowRepository({
       create,
       upsert,
       findMany,
+      findUnique,
     });
 
     await expect(
@@ -73,6 +75,7 @@ describe('PrismaWorkflowRepository', () => {
   it('should list workflows by repository ordered by newest first', async () => {
     const create = vi.fn();
     const upsert = vi.fn();
+    const findUnique = vi.fn();
     const findMany = vi.fn().mockResolvedValue([
       buildRecord({
         id: 'workflow_2',
@@ -90,6 +93,7 @@ describe('PrismaWorkflowRepository', () => {
       create,
       upsert,
       findMany,
+      findUnique,
     });
 
     await expect(repository.listByRepositoryId('repo_123')).resolves.toEqual([
@@ -119,11 +123,13 @@ describe('PrismaWorkflowRepository', () => {
   it('should translate unique constraint errors into a domain conflict', async () => {
     const create = vi.fn().mockRejectedValue({ code: 'P2002' });
     const findMany = vi.fn();
+    const findUnique = vi.fn();
     const upsert = vi.fn();
     const repository = new PrismaWorkflowRepository({
       create,
       upsert,
       findMany,
+      findUnique,
     });
 
     await expect(
@@ -142,10 +148,12 @@ describe('PrismaWorkflowRepository', () => {
     const create = vi.fn();
     const upsert = vi.fn().mockResolvedValue(buildRecord({ name: 'Deploy' }));
     const findMany = vi.fn();
+    const findUnique = vi.fn();
     const repository = new PrismaWorkflowRepository({
       create,
       upsert,
       findMany,
+      findUnique,
     });
 
     await expect(
@@ -179,6 +187,29 @@ describe('PrismaWorkflowRepository', () => {
         path: '.github/workflows/deploy.yml',
         state: 'active',
         sourceType: 'local',
+      },
+    });
+  });
+
+  it('should find a workflow by id', async () => {
+    const create = vi.fn();
+    const upsert = vi.fn();
+    const findMany = vi.fn();
+    const findUnique = vi.fn().mockResolvedValue(buildRecord());
+    const repository = new PrismaWorkflowRepository({
+      create,
+      upsert,
+      findMany,
+      findUnique,
+    });
+
+    await expect(repository.findById('workflow_123')).resolves.toEqual(
+      buildRecord(),
+    );
+
+    expect(findUnique).toHaveBeenCalledWith({
+      where: {
+        id: 'workflow_123',
       },
     });
   });
