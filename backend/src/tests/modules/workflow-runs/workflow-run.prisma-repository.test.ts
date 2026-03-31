@@ -213,6 +213,39 @@ describe('PrismaWorkflowRunRepository', () => {
     });
   });
 
+  it('should find a workflow run by id', async () => {
+    const workflowRunCreate = vi.fn();
+    const workflowRunUpsert = vi.fn();
+    const workflowRunFindMany = vi.fn();
+    const workflowRunFindUnique = vi.fn().mockResolvedValue(buildRunRecord());
+    const workflowJobCreate = vi.fn();
+    const workflowJobUpsert = vi.fn();
+    const workflowJobFindMany = vi.fn();
+    const repository = new PrismaWorkflowRunRepository({
+      workflowRun: {
+        create: workflowRunCreate,
+        upsert: workflowRunUpsert,
+        findMany: workflowRunFindMany,
+        findUnique: workflowRunFindUnique,
+      },
+      workflowJob: {
+        create: workflowJobCreate,
+        upsert: workflowJobUpsert,
+        findMany: workflowJobFindMany,
+      },
+    });
+
+    await expect(repository.findRunById('run_123')).resolves.toEqual(
+      buildRunRecord(),
+    );
+
+    expect(workflowRunFindUnique).toHaveBeenCalledWith({
+      where: {
+        id: 'run_123',
+      },
+    });
+  });
+
   it('should translate unique constraint errors into a run domain conflict', async () => {
     const workflowRunCreate = vi.fn().mockRejectedValue({ code: 'P2002' });
     const workflowRunUpsert = vi.fn();
