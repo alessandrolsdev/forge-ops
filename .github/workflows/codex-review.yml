@@ -210,51 +210,55 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const marker = '<!-- forgeops-codex-review -->';
+            const path = require('path');
             const codexReviewEnabled = process.env.CODEX_REVIEW_ENABLED === 'true';
             const openAiKeyPresent = process.env.OPENAI_API_KEY_PRESENT === 'true';
             const openAiReviewStatus = process.env.OPENAI_REVIEW_STATUS;
             const reviewPath = process.env.OPENAI_REVIEW_PATH;
+            const workspace = process.env.GITHUB_WORKSPACE;
+            const marker = fs
+              .readFileSync(path.join(workspace, '.github/prompts/codex-comment-marker.txt'), 'utf8')
+              .trim();
+            const readinessTemplate = fs.readFileSync(
+              path.join(workspace, '.github/prompts/codex-readiness.md'),
+              'utf8',
+            );
+            const fallbackTemplate = fs.readFileSync(
+              path.join(workspace, '.github/prompts/codex-fallback.md'),
+              'utf8',
+            );
+            const renderTemplate = (template) =>
+              template.replaceAll('{{sha}}', context.payload.pull_request.head.sha);
             let body;
 
             if (!codexReviewEnabled) {
               body = [
                 marker,
-                'Codex review automation is configured as advisory, but it is not enabled for this repository yet.',
-                '',
-                `No automatic Codex review was requested for commit ${context.payload.pull_request.head.sha}.`,
-                '',
-                'Human review remains required.',
-                '',
-                'Enable this workflow by setting repository variable `CODEX_REVIEW_ENABLED=true` after confirming that the Codex review path is ready for this repository.',
+                renderTemplate(readinessTemplate),
               ].join('\n');
             } else if (!openAiKeyPresent) {
               body = [
                 marker,
-                'Codex review automation is enabled, but `OPENAI_API_KEY` is not configured for this repository.',
+                'Codex review automation está habilitada, mas `OPENAI_API_KEY` não está configurada para este repositório.',
                 '',
-                `No automatic Codex review was requested for commit ${context.payload.pull_request.head.sha}.`,
+                `Nenhuma revisão automática do Codex foi solicitada para o commit ${context.payload.pull_request.head.sha}.`,
                 '',
-                'Human review remains required until the secret is configured.',
+                'Revisão humana continua obrigatória até que o secret seja configurado.',
               ].join('\n');
             } else if (openAiReviewStatus === 'completed' && reviewPath && fs.existsSync(reviewPath)) {
               const reviewText = fs.readFileSync(reviewPath, 'utf8').trim();
               body = [
                 marker,
-                `Codex review completed automatically via OpenAI API for commit ${context.payload.pull_request.head.sha}.`,
+                `Revisão Codex concluída automaticamente via OpenAI API para o commit ${context.payload.pull_request.head.sha}.`,
                 '',
                 reviewText,
                 '',
-                'This review is advisory and does not replace human review.',
+                'Esta revisão é advisory e não substitui a revisão humana.',
               ].join('\n');
             } else {
               body = [
                 marker,
-                'Codex review automation attempted an OpenAI API review, but no usable review result was produced.',
-                '',
-                `No automatic Codex review was published for commit ${context.payload.pull_request.head.sha}.`,
-                '',
-                'Human review remains required.',
+                renderTemplate(fallbackTemplate),
               ].join('\n');
             }
 
