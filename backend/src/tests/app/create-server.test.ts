@@ -12,6 +12,10 @@ import type {
 } from '../../modules/repository-registry/repository.entity.js';
 import type { GitHubInstallationRepository } from '../../modules/github/github-app.boundary.js';
 import type { Workflow } from '../../modules/workflow-catalog/workflow.entity.js';
+import type {
+  WorkflowJob,
+  WorkflowRun,
+} from '../../modules/workflow-runs/workflow-run.entity.js';
 
 const buildRepository = (
   overrides: Partial<Repository> = {},
@@ -76,6 +80,45 @@ const buildWorkflow = (overrides: Partial<Workflow> = {}): Workflow => {
   };
 };
 
+const buildWorkflowRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => {
+  const startedAt = new Date('2026-03-30T16:00:00.000Z');
+
+  return {
+    id: 'run_123',
+    workflowId: 'workflow_123',
+    githubRunId: 'run-gh-123',
+    status: 'completed',
+    conclusion: 'success',
+    branch: 'main',
+    sha: 'abc123def456',
+    event: 'push',
+    startedAt,
+    finishedAt: new Date('2026-03-30T16:05:00.000Z'),
+    durationMs: 300000,
+    createdAt: startedAt,
+    updatedAt: startedAt,
+    ...overrides,
+  };
+};
+
+const buildWorkflowJob = (overrides: Partial<WorkflowJob> = {}): WorkflowJob => {
+  const startedAt = new Date('2026-03-30T16:01:00.000Z');
+
+  return {
+    id: 'job_123',
+    workflowRunId: 'run_123',
+    githubJobId: 'job-gh-123',
+    name: 'lint',
+    status: 'completed',
+    conclusion: 'success',
+    startedAt,
+    finishedAt: new Date('2026-03-30T16:02:00.000Z'),
+    createdAt: startedAt,
+    updatedAt: startedAt,
+    ...overrides,
+  };
+};
+
 const createProtectedServer = (overrides?: {
   repositories?: Repository[];
   workflows?: Workflow[];
@@ -95,6 +138,8 @@ const createProtectedServer = (overrides?: {
 }) => {
   const repositoryStore = [...(overrides?.repositories ?? [])];
   const workflowStore = [...(overrides?.workflows ?? [])];
+  const workflowRunStore: WorkflowRun[] = [];
+  const workflowJobStore: WorkflowJob[] = [];
 
   return createServer({
     env: {
@@ -155,6 +200,8 @@ const createProtectedServer = (overrides?: {
           ]
         );
       },
+      listWorkflowRuns: async () => [],
+      listWorkflowRunJobs: async () => [],
     },
     repositoryRegistryRepository: {
       list: async () => [...repositoryStore],
@@ -219,6 +266,94 @@ const createProtectedServer = (overrides?: {
       },
       listByRepositoryId: async (repositoryId) =>
         workflowStore.filter((workflow) => workflow.repositoryId === repositoryId),
+    },
+    workflowRunRepository: {
+      createRun: async (input) =>
+        buildWorkflowRun({
+          workflowId: input.workflowId,
+          githubRunId: input.githubRunId,
+          status: input.status,
+          conclusion: input.conclusion,
+          branch: input.branch,
+          sha: input.sha,
+          event: input.event,
+          startedAt: input.startedAt,
+          finishedAt: input.finishedAt,
+          durationMs: input.durationMs,
+        }),
+      upsertRun: async (input) => {
+        const existingRunIndex = workflowRunStore.findIndex(
+          (workflowRun) =>
+            workflowRun.workflowId === input.workflowId &&
+            workflowRun.githubRunId === input.githubRunId,
+        );
+        const workflowRun = buildWorkflowRun({
+          id:
+            existingRunIndex >= 0
+              ? workflowRunStore[existingRunIndex]!.id
+              : `run_${workflowRunStore.length + 1}`,
+          workflowId: input.workflowId,
+          githubRunId: input.githubRunId,
+          status: input.status,
+          conclusion: input.conclusion,
+          branch: input.branch,
+          sha: input.sha,
+          event: input.event,
+          startedAt: input.startedAt,
+          finishedAt: input.finishedAt,
+          durationMs: input.durationMs,
+        });
+
+        if (existingRunIndex >= 0) {
+          workflowRunStore[existingRunIndex] = workflowRun;
+        } else {
+          workflowRunStore.push(workflowRun);
+        }
+
+        return workflowRun;
+      },
+      listRunsByWorkflowId: async (workflowId) =>
+        workflowRunStore.filter((workflowRun) => workflowRun.workflowId === workflowId),
+      createJob: async (input) =>
+        buildWorkflowJob({
+          workflowRunId: input.workflowRunId,
+          githubJobId: input.githubJobId,
+          name: input.name,
+          status: input.status,
+          conclusion: input.conclusion,
+          startedAt: input.startedAt,
+          finishedAt: input.finishedAt,
+        }),
+      upsertJob: async (input) => {
+        const existingJobIndex = workflowJobStore.findIndex(
+          (workflowJob) =>
+            workflowJob.workflowRunId === input.workflowRunId &&
+            workflowJob.githubJobId === input.githubJobId,
+        );
+        const workflowJob = buildWorkflowJob({
+          id:
+            existingJobIndex >= 0
+              ? workflowJobStore[existingJobIndex]!.id
+              : `job_${workflowJobStore.length + 1}`,
+          workflowRunId: input.workflowRunId,
+          githubJobId: input.githubJobId,
+          name: input.name,
+          status: input.status,
+          conclusion: input.conclusion,
+          startedAt: input.startedAt,
+          finishedAt: input.finishedAt,
+        });
+
+        if (existingJobIndex >= 0) {
+          workflowJobStore[existingJobIndex] = workflowJob;
+        } else {
+          workflowJobStore.push(workflowJob);
+        }
+
+        return workflowJob;
+      },
+      listJobsByWorkflowRunId: async (workflowRunId) =>
+        workflowJobStore.filter((workflowJob) => workflowJob.workflowRunId === workflowRunId),
     },
   });
 };

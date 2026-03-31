@@ -97,6 +97,8 @@ describe('WorkflowService', () => {
         assertConfigured: () => undefined,
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows,
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
       },
       logger,
     });
@@ -175,6 +177,8 @@ describe('WorkflowService', () => {
         assertConfigured: () => undefined,
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
       },
       logger,
     });
@@ -226,6 +230,8 @@ describe('WorkflowService', () => {
         listRepositoryWorkflows: async () => {
           throw new GitHubWorkflowCatalogSyncError();
         },
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
       },
       logger,
     });
