@@ -12,11 +12,14 @@ import { registerRepositoryRegistryRoutes } from '../modules/repository-registry
 import type { RepositoryService } from '../modules/repository-registry/repository.service.js';
 import { registerWorkflowCatalogRoutes } from '../modules/workflow-catalog/workflow.controller.js';
 import type { WorkflowService } from '../modules/workflow-catalog/workflow.service.js';
+import { registerWorkflowRunRoutes } from '../modules/workflow-runs/workflow-run.controller.js';
+import type { WorkflowRunService } from '../modules/workflow-runs/workflow-run.service.js';
 
 interface RegisterRoutesOptions {
   healthService: HealthService;
   repositoryService: RepositoryService;
   workflowService: WorkflowService;
+  workflowRunService: WorkflowRunService;
 }
 
 export type ForgeOpsFastifyInstance = FastifyInstance<
@@ -34,4 +37,5 @@ export const registerRoutes = (
   registerAuthReferenceRoutes(app);
   registerRepositoryRegistryRoutes(app, options.repositoryService);
   registerWorkflowCatalogRoutes(app, options.workflowService);
+  registerWorkflowRunRoutes(app, options.workflowRunService);
 };

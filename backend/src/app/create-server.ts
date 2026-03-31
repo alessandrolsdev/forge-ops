@@ -108,6 +108,7 @@ export const createServer = (options: CreateServerOptions) => {
     healthService,
     repositoryService,
     workflowService,
+    workflowRunService,
   });
 
   return app;
