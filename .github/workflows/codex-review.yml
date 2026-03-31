@@ -27,56 +27,236 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Skip fork pull requests
         if: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           echo "Codex review is skipped for fork pull requests to avoid exposing review automation to untrusted contexts."
 
-      - name: Publish Codex review status
-        if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+      - name: Check OpenAI API key availability
+        id: openai-key
+        if: ${{ !github.event.pull_request.head.repo.fork && vars.CODEX_REVIEW_ENABLED == 'true' }}
         env:
-          CODEX_REVIEW_ENABLED: ${{ vars.CODEX_REVIEW_ENABLED }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - name: Collect pull request context
+        id: pr-context
+        if: ${{ !github.event.pull_request.head.repo.fork && vars.CODEX_REVIEW_ENABLED == 'true' && steps.openai-key.outputs.present == 'true' }}
+        uses: actions/github-script@v8
         with:
           script: |
+            const fs = require('fs');
+            const path = require('path');
+            const outputDir = path.join(process.env.RUNNER_TEMP, 'codex-review');
+            const maxDiffCharacters = 200000;
+
+            fs.mkdirSync(outputDir, { recursive: true });
+
+            const pr = context.payload.pull_request;
+            const diffResponse = await github.request({
+              method: 'GET',
+              url: `/repos/${context.repo.owner}/${context.repo.repo}/pulls/${pr.number}`,
+              headers: {
+                accept: 'application/vnd.github.v3.diff',
+              },
+            });
+
+            const rawDiff =
+              typeof diffResponse.data === 'string'
+                ? diffResponse.data
+                : String(diffResponse.data);
+            const diff =
+              rawDiff.length > maxDiffCharacters
+                ? `${rawDiff.slice(0, maxDiffCharacters)}\n\n[diff truncated after ${maxDiffCharacters} characters]`
+                : rawDiff;
+
+            fs.writeFileSync(
+              path.join(outputDir, 'pr.json'),
+              JSON.stringify(
+                {
+                  title: pr.title ?? '',
+                  body: pr.body ?? '',
+                },
+                null,
+                2,
+              ),
+            );
+            fs.writeFileSync(path.join(outputDir, 'pr.diff'), diff);
+
+            core.setOutput('context_dir', outputDir);
+
+      - name: Run Codex review via OpenAI API
+        id: openai-review
+        if: ${{ !github.event.pull_request.head.repo.fork && vars.CODEX_REVIEW_ENABLED == 'true' && steps.openai-key.outputs.present == 'true' }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          request_path="$RUNNER_TEMP/codex-review/request.json"
+          response_path="$RUNNER_TEMP/codex-review/response.json"
+          review_path="$RUNNER_TEMP/codex-review/review.md"
+          prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
+          diff_path="$PR_CONTEXT_DIR/pr.diff"
+
+          echo "Prompt size (bytes): $(wc -c < "$prompt_path")"
+          echo "PR diff size (bytes): $(wc -c < "$diff_path")"
+
+          jq -n \
+            --rawfile prompt "$prompt_path" \
+            --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
+            --rawfile diff "$diff_path" \
+            '{
+              model: "gpt-5.4",
+              store: false,
+              reasoning: {
+                effort: "none"
+              },
+              text: {
+                verbosity: "low"
+              },
+              instructions: $prompt,
+              input: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "input_text",
+                      text: (
+                        "PR title:\n" + ($pr[0].title // "(empty)") +
+                        "\n\nPR body:\n" + ($pr[0].body // "(empty)") +
+                        "\n\nUnified diff:\n" + $diff
+                      )
+                    }
+                  ]
+                }
+              ]
+            }' > "$request_path"
+
+          set +e
+          http_status=$(curl -sS \
+            -o "$response_path" \
+            -w "%{http_code}" \
+            https://api.openai.com/v1/responses \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data @"$request_path")
+          curl_exit=$?
+          set -e
+
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "OpenAI API raw response:"
+          cat "$response_path"
+
+          jq -r '
+            def output_text:
+              if type == "string" then
+                .
+              elif type == "object" then
+                .value // empty
+              else
+                empty
+              end;
+
+            [
+              .output[0]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text | output_text,
+              .output[]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text | output_text
+            ]
+            | map(select(length > 0))
+            | unique
+            | join("\n\n")
+          ' "$response_path" > "$review_path"
+
+          if [ ! -s "$review_path" ] || [ "$(cat "$review_path")" = "null" ]; then
+            echo "OpenAI review parsing produced no usable text output."
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "status=completed" >> "$GITHUB_OUTPUT"
+          echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Codex review status
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: actions/github-script@v8
+        env:
+          CODEX_REVIEW_ENABLED: ${{ vars.CODEX_REVIEW_ENABLED }}
+          OPENAI_API_KEY_PRESENT: ${{ steps.openai-key.outputs.present }}
+          OPENAI_REVIEW_STATUS: ${{ steps.openai-review.outputs.status }}
+          OPENAI_REVIEW_PATH: ${{ steps.openai-review.outputs.review_path }}
+        with:
+          script: |
+            const fs = require('fs');
             const marker = '<!-- forgeops-codex-review -->';
             const codexReviewEnabled = process.env.CODEX_REVIEW_ENABLED === 'true';
-            const reviewFocus = [
-              '- security-sensitive changes and secret handling',
-              '- scope alignment with the linked issue and stated acceptance criteria',
-              '- tests added or updated, plus missing coverage',
-              '- behavioural regressions or edge cases',
-              '- architectural boundaries and layering',
-              '- TypeScript typing safety and unsafe relaxations',
-              '- residual risks and follow-up items',
-            ].join('\n');
-            const body = codexReviewEnabled
-              ? [
-                  marker,
-                  '@codex review',
-                  '',
-                  `Requested automatically for commit ${context.payload.pull_request.head.sha}.`,
-                  '',
-                  'Review focus:',
-                  reviewFocus,
-                  '',
-                  'If Codex does not respond with an actual review, keep this check advisory and finish with human review.',
-                ].join('\n')
-              : [
-                  marker,
-                  'Codex review automation is configured as advisory, but it is not enabled for this repository yet.',
-                  '',
-                  `No automatic Codex review was requested for commit ${context.payload.pull_request.head.sha}.`,
-                  '',
-                  'Human review remains required.',
-                  '',
-                  'Enable this workflow only after confirming that the maintainer account used for PR review is connected to GitHub in Codex and a manual `@codex review` works.',
-                  '',
-                  'Then set repository variable `CODEX_REVIEW_ENABLED=true`.',
-                  '',
-                  'Expected Codex review focus:',
-                  reviewFocus,
-                ].join('\n');
+            const openAiKeyPresent = process.env.OPENAI_API_KEY_PRESENT === 'true';
+            const openAiReviewStatus = process.env.OPENAI_REVIEW_STATUS;
+            const reviewPath = process.env.OPENAI_REVIEW_PATH;
+            let body;
+
+            if (!codexReviewEnabled) {
+              body = [
+                marker,
+                'Codex review automation is configured as advisory, but it is not enabled for this repository yet.',
+                '',
+                `No automatic Codex review was requested for commit ${context.payload.pull_request.head.sha}.`,
+                '',
+                'Human review remains required.',
+                '',
+                'Enable this workflow by setting repository variable `CODEX_REVIEW_ENABLED=true` after confirming that the Codex review path is ready for this repository.',
+              ].join('\n');
+            } else if (!openAiKeyPresent) {
+              body = [
+                marker,
+                'Codex review automation is enabled, but `OPENAI_API_KEY` is not configured for this repository.',
+                '',
+                `No automatic Codex review was requested for commit ${context.payload.pull_request.head.sha}.`,
+                '',
+                'Human review remains required until the secret is configured.',
+              ].join('\n');
+            } else if (openAiReviewStatus === 'completed' && reviewPath && fs.existsSync(reviewPath)) {
+              const reviewText = fs.readFileSync(reviewPath, 'utf8').trim();
+              body = [
+                marker,
+                `Codex review completed automatically via OpenAI API for commit ${context.payload.pull_request.head.sha}.`,
+                '',
+                reviewText,
+                '',
+                'This review is advisory and does not replace human review.',
+              ].join('\n');
+            } else {
+              body = [
+                marker,
+                'Codex review automation attempted an OpenAI API review, but no usable review result was produced.',
+                '',
+                `No automatic Codex review was published for commit ${context.payload.pull_request.head.sha}.`,
+                '',
+                'Human review remains required.',
+              ].join('\n');
+            }
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
