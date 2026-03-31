@@ -25,8 +25,18 @@
 ## Codex Review Policy
 - Trigger Codex review only for non-draft PRs targeting `main`.
 - Skip fork PRs by default.
-- Request review by posting `@codex review` from automation, which assumes the repository is connected to Codex on GitHub.
-- If Codex is not enabled for the repository yet, the workflow should remain non-blocking and human review remains mandatory.
+- Treat Codex review as advisory until the repository owner validates the signal quality and GitHub connector readiness.
+- Gate automatic `@codex review` requests behind repository variable `CODEX_REVIEW_ENABLED=true`.
+- Enable `CODEX_REVIEW_ENABLED` only after confirming that the maintainer account used for PR review is connected to GitHub in Codex and a manual `@codex review` produces an actual review.
+- If Codex is not enabled or not connected yet, the workflow must post a fallback comment that makes the lack of automatic review explicit and reminds reviewers that human review remains mandatory.
+- The Codex review request should focus on:
+  - security-sensitive changes and secret handling
+  - scope alignment with the linked issue and acceptance criteria
+  - tests added or updated, plus missing coverage
+  - behavioural regressions and edge cases
+  - architectural boundaries and layering
+  - TypeScript typing safety and unsafe relaxations
+  - residual risks and follow-up items
 
 ## Merge Strategy
 - Prefer squash merges during the foundation milestone.
