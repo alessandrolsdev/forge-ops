@@ -133,6 +133,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -192,6 +193,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -251,6 +253,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -314,6 +317,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -361,6 +365,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -407,6 +412,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -453,6 +459,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -506,6 +513,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -555,6 +563,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -605,6 +614,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -730,6 +740,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns,
         listWorkflowRunJobs,
+        listPullRequests: async () => [],
       },
       logger,
     });
@@ -870,6 +881,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns,
         listWorkflowRunJobs,
+        listPullRequests: async () => [],
       },
       logger,
     });
@@ -931,6 +943,7 @@ describe('WorkflowRunService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
       logger,
     });
@@ -993,6 +1006,7 @@ describe('WorkflowRunService', () => {
           throw new GitHubWorkflowRunsSyncError();
         },
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
       logger,
     });
