@@ -4,6 +4,7 @@ import type {
   GitHubAppBoundary,
   GitHubInstallationRepository,
   GitHubAppStatus,
+  GitHubPullRequestDescriptor,
   GitHubRepositoryDescriptor,
   GitHubWorkflowDescriptor,
   GitHubWorkflowJobDescriptor,
@@ -13,6 +14,7 @@ import type { GitHubAppEnv } from '../../../infra/config/github-app-env.js';
 import { ConfigurationError } from '../../../shared/errors/configuration-error.js';
 import {
   GitHubRepositoryDiscoveryError,
+  GitHubPullRequestSyncError,
   GitHubWorkflowCatalogSyncError,
   GitHubWorkflowRunsSyncError,
 } from '../github-app.errors.js';
@@ -84,6 +86,27 @@ const githubWorkflowRunJobsSchema = z.object({
     }),
   ),
 });
+
+const githubPullRequestsSchema = z.array(
+  z.object({
+    id: z.number().int().nonnegative(),
+    number: z.number().int().positive(),
+    title: z.string().trim().min(1),
+    state: z.enum(['open', 'closed']),
+    merged_at: z.string().trim().min(1).nullable(),
+    user: z
+      .object({
+        login: z.string().trim().min(1),
+      })
+      .nullable(),
+    base: z.object({
+      ref: z.string().trim().min(1),
+    }),
+    head: z.object({
+      ref: z.string().trim().min(1),
+    }),
+  }),
+);
 
 const GITHUB_API_VERSION = '2022-11-28';
 const DEFAULT_GITHUB_API_BASE_URL = 'https://api.github.com';
@@ -278,6 +301,35 @@ export class GitHubAppProvider implements GitHubAppBoundary {
     }
   }
 
+  public async listPullRequests(
+    repository: GitHubRepositoryDescriptor,
+  ): Promise<GitHubPullRequestDescriptor[]> {
+    this.assertConfigured();
+
+    try {
+      const installationToken = await this.createInstallationAccessToken();
+      const payload = await this.requestJson(
+        `${this.apiBaseUrl}/repos/${repository.owner}/${repository.name}/pulls?state=all&per_page=100&sort=updated&direction=desc`,
+        {
+          method: 'GET',
+          headers: this.createJsonHeaders(`Bearer ${installationToken}`),
+        },
+        githubPullRequestsSchema,
+      );
+
+      return payload.map((pullRequest) => mapGitHubPullRequestDescriptor(pullRequest));
+    } catch (error) {
+      if (
+        error instanceof ConfigurationError ||
+        error instanceof GitHubPullRequestSyncError
+      ) {
+        throw error;
+      }
+
+      throw new GitHubPullRequestSyncError();
+    }
+  }
+
   private async createInstallationAccessToken(): Promise<string> {
     const config = this.config;
 
@@ -393,6 +445,31 @@ const mapGitHubWorkflowJobDescriptor = (
     startedAt: parseGitHubDate(workflowJob.started_at),
     finishedAt: parseGitHubDate(workflowJob.completed_at),
   };
+};
+
+const mapGitHubPullRequestDescriptor = (
+  pullRequest: z.infer<typeof githubPullRequestsSchema>[number],
+): GitHubPullRequestDescriptor => {
+  return {
+    githubPrId: String(pullRequest.id),
+    number: pullRequest.number,
+    title: pullRequest.title,
+    state: mapPullRequestState(pullRequest.state, pullRequest.merged_at),
+    author: pullRequest.user?.login ?? 'unknown',
+    baseBranch: pullRequest.base.ref,
+    headBranch: pullRequest.head.ref,
+  };
+};
+
+const mapPullRequestState = (
+  state: 'open' | 'closed',
+  mergedAt: string | null,
+): GitHubPullRequestDescriptor['state'] => {
+  if (state === 'open') {
+    return 'open';
+  }
+
+  return mergedAt ? 'merged' : 'closed';
 };
 
 const mapWorkflowExecutionStatus = (

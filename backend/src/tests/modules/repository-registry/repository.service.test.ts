@@ -6,6 +6,7 @@ import type {
 import type { GitHubInstallationRepository } from '../../../modules/github/github-app.boundary.js';
 import {
   GitHubWorkflowCatalogSyncError,
+  GitHubPullRequestSyncError,
   GitHubWorkflowRunsSyncError,
 } from '../../../modules/github/github-app.errors.js';
 import { RepositoryAlreadyExistsError } from '../../../modules/repository-registry/repository.errors.js';
@@ -91,6 +92,7 @@ describe('RepositoryService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -110,6 +112,9 @@ describe('RepositoryService', () => {
     const create = vi.fn().mockResolvedValue(buildRepository());
     const list = vi.fn();
     const workflowRunSync = {
+      syncByRepositoryId: vi.fn().mockResolvedValue([]),
+    };
+    const pullRequestSync = {
       syncByRepositoryId: vi.fn().mockResolvedValue([]),
     };
     const logger = {
@@ -138,17 +143,20 @@ describe('RepositoryService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       workflowRunSync,
+      pullRequestSync,
       logger,
     });
 
     await expect(service.create(buildCreateInput())).resolves.toEqual(buildRepository());
     expect(create).toHaveBeenCalledWith(buildCreateInput());
     expect(workflowRunSync.syncByRepositoryId).toHaveBeenCalledWith('repo_123');
+    expect(pullRequestSync.syncByRepositoryId).toHaveBeenCalledWith('repo_123');
     expect(logger.info).toHaveBeenCalledWith(
       {
         event: 'repository_ingestion_succeeded',
@@ -157,6 +165,7 @@ describe('RepositoryService', () => {
         fullName: 'forgeops/backend',
         syncedWorkflowCount: 0,
         syncedWorkflowRunCount: 0,
+        syncedPullRequestCount: 0,
       },
       'Repository ingestion completed.',
     );
@@ -191,6 +200,7 @@ describe('RepositoryService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi.fn().mockResolvedValue([]),
@@ -246,6 +256,7 @@ describe('RepositoryService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi.fn(),
@@ -299,6 +310,7 @@ describe('RepositoryService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi
@@ -362,6 +374,7 @@ describe('RepositoryService', () => {
         listRepositoryWorkflows: async () => [],
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
       },
     });
 
@@ -375,5 +388,65 @@ describe('RepositoryService', () => {
       }),
     ]);
     expect(listInstallationRepositories).toHaveBeenCalledTimes(1);
+  });
+
+  it('should roll back the repository when pull request sync fails after workflow run sync', async () => {
+    const deleteById = vi.fn().mockResolvedValue(undefined);
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+    const service = new RepositoryService({
+      repository: {
+        list: vi.fn(),
+        create: vi.fn().mockResolvedValue(buildRepository()),
+        findById: vi.fn(),
+        deleteById,
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+      },
+      workflowCatalogSync: {
+        syncByRepositoryId: vi.fn().mockResolvedValue([]),
+      },
+      workflowRunSync: {
+        syncByRepositoryId: vi.fn().mockResolvedValue([]),
+      },
+      pullRequestSync: {
+        syncByRepositoryId: vi.fn().mockRejectedValue(new GitHubPullRequestSyncError()),
+      },
+      logger,
+    });
+
+    await expect(service.create(buildCreateInput())).rejects.toBeInstanceOf(
+      GitHubPullRequestSyncError,
+    );
+
+    expect(deleteById).toHaveBeenCalledWith('repo_123');
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        event: 'repository_ingestion_failed',
+        repositoryId: 'repo_123',
+        githubRepoId: '123456789',
+        fullName: 'forgeops/backend',
+        errorCode: 'github_pull_request_sync_unavailable',
+        errorStatusCode: 503,
+      },
+      'Repository ingestion failed.',
+    );
   });
 });

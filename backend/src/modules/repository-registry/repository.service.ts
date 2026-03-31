@@ -17,6 +17,9 @@ type WorkflowCatalogSync = {
 type WorkflowRunSync = {
   syncByRepositoryId(repositoryId: string): Promise<unknown[]>;
 };
+type PullRequestSync = {
+  syncByRepositoryId(repositoryId: string): Promise<unknown[]>;
+};
 
 const noopLogger: ServiceLogger = {
   info: () => undefined,
@@ -28,6 +31,7 @@ export interface RepositoryServiceOptions {
   githubBoundary: GitHubAppBoundary;
   workflowCatalogSync?: WorkflowCatalogSync;
   workflowRunSync?: WorkflowRunSync;
+  pullRequestSync?: PullRequestSync;
   logger?: ServiceLogger;
 }
 
@@ -43,12 +47,16 @@ export class RepositoryService {
       const repository = await this.options.repository.create(input);
       let syncedWorkflows: unknown[] | undefined;
       let syncedWorkflowRuns: unknown[] | undefined;
+      let syncedPullRequests: unknown[] | undefined;
 
       try {
         syncedWorkflows = await this.options.workflowCatalogSync?.syncByRepositoryId(
           repository.id,
         );
         syncedWorkflowRuns = await this.options.workflowRunSync?.syncByRepositoryId(
+          repository.id,
+        );
+        syncedPullRequests = await this.options.pullRequestSync?.syncByRepositoryId(
           repository.id,
         );
       } catch (error) {
@@ -66,6 +74,7 @@ export class RepositoryService {
           fullName: repository.fullName,
           syncedWorkflowCount: syncedWorkflows?.length ?? 0,
           syncedWorkflowRunCount: syncedWorkflowRuns?.length ?? 0,
+          syncedPullRequestCount: syncedPullRequests?.length ?? 0,
         },
         'Repository ingestion completed.',
       );
