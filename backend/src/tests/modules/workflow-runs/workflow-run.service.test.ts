@@ -3,13 +3,10 @@ import { GitHubWorkflowRunsSyncError } from '../../../modules/github/github-app.
 import type { Repository } from '../../../modules/repository-registry/repository.entity.js';
 import { RepositoryNotFoundError } from '../../../modules/repository-registry/repository.errors.js';
 import type { Workflow } from '../../../modules/workflow-catalog/workflow.entity.js';
-import type {
-  WorkflowJob,
-  WorkflowRun,
-} from '../../../modules/workflow-runs/workflow-run.entity.js';
-import { WorkflowRunService } from '../../../modules/workflow-runs/workflow-run.service.js';
-import { WorkflowRunNotFoundError } from '../../../modules/workflow-runs/workflow-run.errors.js';
 import { WorkflowNotFoundError } from '../../../modules/workflow-catalog/workflow.errors.js';
+import type { WorkflowJob, WorkflowRun } from '../../../modules/workflow-runs/workflow-run.entity.js';
+import { WorkflowRunNotFoundError } from '../../../modules/workflow-runs/workflow-run.errors.js';
+import { WorkflowRunService } from '../../../modules/workflow-runs/workflow-run.service.js';
 
 const buildRepository = (overrides: Partial<Repository> = {}): Repository => {
   const createdAt = new Date('2026-03-30T10:00:00.000Z');
@@ -85,6 +82,123 @@ const buildWorkflowJob = (overrides: Partial<WorkflowJob> = {}): WorkflowJob => 
 };
 
 describe('WorkflowRunService', () => {
+  it('should list workflow runs for a workflow that belongs to the repository', async () => {
+    const findRepositoryById = vi.fn().mockResolvedValue(buildRepository());
+    const findWorkflowById = vi.fn().mockResolvedValue(buildWorkflow());
+    const listRunsByWorkflowId = vi.fn().mockResolvedValue([
+      buildWorkflowRun(),
+      buildWorkflowRun({
+        id: 'run_456',
+        githubRunId: '778',
+        status: 'in_progress',
+        conclusion: null,
+        finishedAt: null,
+        durationMs: null,
+      }),
+    ]);
+    const service = new WorkflowRunService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: findRepositoryById,
+        deleteById: vi.fn(),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: findWorkflowById,
+      },
+      workflowRunRepository: {
+        createRun: vi.fn(),
+        upsertRun: vi.fn(),
+        listRunsByWorkflowId,
+        findRunById: vi.fn(),
+        createJob: vi.fn(),
+        upsertJob: vi.fn(),
+        listJobsByWorkflowRunId: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+      },
+    });
+
+    await expect(service.listByWorkflowId('repo_123', 'workflow_123')).resolves.toEqual([
+      buildWorkflowRun(),
+      buildWorkflowRun({
+        id: 'run_456',
+        githubRunId: '778',
+        status: 'in_progress',
+        conclusion: null,
+        finishedAt: null,
+        durationMs: null,
+      }),
+    ]);
+
+    expect(findRepositoryById).toHaveBeenCalledWith('repo_123');
+    expect(findWorkflowById).toHaveBeenCalledWith('workflow_123');
+    expect(listRunsByWorkflowId).toHaveBeenCalledWith('workflow_123');
+  });
+
+  it('should return an empty list when the workflow has no persisted runs', async () => {
+    const listRunsByWorkflowId = vi.fn().mockResolvedValue([]);
+    const service = new WorkflowRunService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildWorkflow()),
+      },
+      workflowRunRepository: {
+        createRun: vi.fn(),
+        upsertRun: vi.fn(),
+        listRunsByWorkflowId,
+        findRunById: vi.fn(),
+        createJob: vi.fn(),
+        upsertJob: vi.fn(),
+        listJobsByWorkflowRunId: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+      },
+    });
+
+    await expect(service.listByWorkflowId('repo_123', 'workflow_123')).resolves.toEqual([]);
+    expect(listRunsByWorkflowId).toHaveBeenCalledWith('workflow_123');
+  });
+
   it('should return workflow run detail with jobs when ownership chain is valid', async () => {
     const findRepositoryById = vi.fn().mockResolvedValue(buildRepository());
     const findWorkflowById = vi.fn().mockResolvedValue(buildWorkflow());
@@ -140,9 +254,7 @@ describe('WorkflowRunService', () => {
       },
     });
 
-    await expect(
-      service.getDetailById('repo_123', 'workflow_123', 'run_123'),
-    ).resolves.toEqual({
+    await expect(service.getDetailById('repo_123', 'workflow_123', 'run_123')).resolves.toEqual({
       run: buildWorkflowRun(),
       jobs: [
         buildWorkflowJob(),
@@ -205,12 +317,56 @@ describe('WorkflowRunService', () => {
       },
     });
 
-    await expect(
-      service.getDetailById('repo_123', 'workflow_123', 'run_123'),
-    ).resolves.toEqual({
+    await expect(service.getDetailById('repo_123', 'workflow_123', 'run_123')).resolves.toEqual({
       run: buildWorkflowRun(),
       jobs: [],
     });
+  });
+
+  it('should fail with repository not found when list receives an unknown repository id', async () => {
+    const service = new WorkflowRunService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(null),
+        deleteById: vi.fn(),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn(),
+      },
+      workflowRunRepository: {
+        createRun: vi.fn(),
+        upsertRun: vi.fn(),
+        listRunsByWorkflowId: vi.fn(),
+        findRunById: vi.fn(),
+        createJob: vi.fn(),
+        upsertJob: vi.fn(),
+        listJobsByWorkflowRunId: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+      },
+    });
+
+    await expect(service.listByWorkflowId('repo_missing', 'workflow_123')).rejects.toBeInstanceOf(
+      RepositoryNotFoundError,
+    );
   });
 
   it('should fail with repository not found when detail receives an unknown repository id', async () => {
@@ -300,6 +456,9 @@ describe('WorkflowRunService', () => {
       },
     });
 
+    await expect(service.listByWorkflowId('repo_123', 'workflow_missing')).rejects.toBeInstanceOf(
+      WorkflowNotFoundError,
+    );
     await expect(
       service.getDetailById('repo_123', 'workflow_missing', 'run_123'),
     ).rejects.toBeInstanceOf(WorkflowNotFoundError);
@@ -350,6 +509,9 @@ describe('WorkflowRunService', () => {
       },
     });
 
+    await expect(service.listByWorkflowId('repo_123', 'workflow_123')).rejects.toBeInstanceOf(
+      WorkflowNotFoundError,
+    );
     await expect(
       service.getDetailById('repo_123', 'workflow_123', 'run_123'),
     ).rejects.toBeInstanceOf(WorkflowNotFoundError);
