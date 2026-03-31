@@ -18,6 +18,7 @@ model Repository {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   workflows     Workflow[]
+  pullRequests  PullRequest[]
 
   @@index([owner, name])
 }
@@ -77,6 +78,25 @@ model WorkflowJob {
   @@index([workflowRunId, startedAt])
 }
 
+model PullRequest {
+  id           String           @id @default(cuid())
+  repositoryId String
+  githubPrId   String
+  number       Int
+  title        String
+  state        PullRequestState
+  author       String
+  baseBranch   String
+  headBranch   String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  repository   Repository       @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, githubPrId])
+  @@unique([repositoryId, number])
+  @@index([repositoryId, createdAt])
+}
+
 enum WorkflowState {
   active
   deleted
@@ -109,5 +129,11 @@ enum WorkflowExecutionConclusion {
   action_required
   stale
   startup_failure
+}
+
+enum PullRequestState {
+  open
+  closed
+  merged
 }
 
