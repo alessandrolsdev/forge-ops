@@ -26,6 +26,7 @@ describe('RepositoriesView', () => {
       getRepositories: vi.fn(),
       getRepositoryDiscovery: vi.fn(),
       getRepositoryWorkflows: vi.fn(),
+      getWorkflowRuns: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -49,6 +50,7 @@ describe('RepositoriesView', () => {
     expect(client.getRepositories).not.toHaveBeenCalled();
     expect(client.getRepositoryDiscovery).not.toHaveBeenCalled();
     expect(client.getRepositoryWorkflows).not.toHaveBeenCalled();
+    expect(client.getWorkflowRuns).not.toHaveBeenCalled();
   });
 
   it('should load repository workflows for the selected monitored repository', async () => {
@@ -95,11 +97,31 @@ describe('RepositoriesView', () => {
         },
       ]);
     const createRepository = vi.fn<ForgeOpsApiClient['createRepository']>();
+    const getWorkflowRuns = vi
+      .fn<ForgeOpsApiClient['getWorkflowRuns']>()
+      .mockResolvedValue([
+        {
+          id: 'run_123',
+          workflowId: 'workflow_123',
+          githubRunId: '1001',
+          status: 'completed',
+          conclusion: 'success',
+          branch: 'main',
+          sha: 'abcdef123456',
+          event: 'push',
+          startedAt: '2026-03-31T11:00:00.000Z',
+          finishedAt: '2026-03-31T11:03:00.000Z',
+          durationMs: 180000,
+          createdAt: '2026-03-31T11:00:00.000Z',
+          updatedAt: '2026-03-31T11:03:00.000Z',
+        },
+      ]);
     const client: ForgeOpsApiClient = {
       getHealth: vi.fn(),
       getRepositories,
       getRepositoryDiscovery,
       getRepositoryWorkflows,
+      getWorkflowRuns,
       createRepository,
     };
 
@@ -119,6 +141,155 @@ describe('RepositoriesView', () => {
     });
 
     expect(getRepositoryWorkflows).toHaveBeenCalledWith('trusted-token', 'repo_123');
+    await waitFor(() => {
+      expect(getWorkflowRuns).toHaveBeenCalledWith(
+        'trusted-token',
+        'repo_123',
+        'workflow_123',
+      );
+    });
+  });
+
+  it('should render workflow runs loading state while querying runs', async () => {
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories: vi.fn().mockResolvedValue([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getRepositoryDiscovery: vi.fn().mockResolvedValue([]),
+      getRepositoryWorkflows: vi.fn().mockResolvedValue([
+        {
+          id: 'workflow_123',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+          name: 'CI',
+          path: '.github/workflows/ci.yml',
+          state: 'active',
+          sourceType: 'local',
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getWorkflowRuns: vi.fn().mockImplementation(() => new Promise(() => undefined)),
+      createRepository: vi.fn(),
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Loading workflow runs...')).toBeInTheDocument();
+    });
+  });
+
+  it('should render workflow runs empty state', async () => {
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories: vi.fn().mockResolvedValue([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getRepositoryDiscovery: vi.fn().mockResolvedValue([]),
+      getRepositoryWorkflows: vi.fn().mockResolvedValue([
+        {
+          id: 'workflow_123',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+          name: 'CI',
+          path: '.github/workflows/ci.yml',
+          state: 'active',
+          sourceType: 'local',
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getWorkflowRuns: vi.fn().mockResolvedValue([]),
+      createRepository: vi.fn(),
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('ForgeOps has not synchronized workflow runs for this workflow yet.'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('should render workflow runs errors clearly', async () => {
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories: vi.fn().mockResolvedValue([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getRepositoryDiscovery: vi.fn().mockResolvedValue([]),
+      getRepositoryWorkflows: vi.fn().mockResolvedValue([
+        {
+          id: 'workflow_123',
+          repositoryId: 'repo_123',
+          githubWorkflowId: 'workflow-gh-123',
+          name: 'CI',
+          path: '.github/workflows/ci.yml',
+          state: 'active',
+          sourceType: 'local',
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getWorkflowRuns: vi
+        .fn()
+        .mockRejectedValue(new ApiClientError('Workflow runs are currently unavailable.', 503)),
+      createRepository: vi.fn(),
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Workflow runs are currently unavailable.')).toBeInTheDocument();
+    });
   });
 
   it('should load discovery and connect a repository through the backend client', async () => {
@@ -183,6 +354,7 @@ describe('RepositoriesView', () => {
       getRepositories,
       getRepositoryDiscovery,
       getRepositoryWorkflows,
+      getWorkflowRuns: vi.fn().mockResolvedValue([]),
       createRepository,
     };
 
@@ -225,6 +397,7 @@ describe('RepositoriesView', () => {
           new ApiClientError('GitHub repository discovery is currently unavailable.', 503),
         ),
       getRepositoryWorkflows: vi.fn(),
+      getWorkflowRuns: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -273,6 +446,7 @@ describe('RepositoriesView', () => {
         },
       ]),
       getRepositoryWorkflows: vi.fn().mockResolvedValue([]),
+      getWorkflowRuns: vi.fn().mockResolvedValue([]),
       createRepository: vi
         .fn()
         .mockRejectedValue(
@@ -322,6 +496,7 @@ describe('RepositoriesView', () => {
         .mockRejectedValue(
           new ApiClientError('Repository was not found.', 404, 'repository_not_found'),
         ),
+      getWorkflowRuns: vi.fn().mockResolvedValue([]),
       createRepository: vi.fn(),
     };
 

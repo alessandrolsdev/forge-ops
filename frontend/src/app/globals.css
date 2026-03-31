@@ -408,6 +408,39 @@ pre {
   font-size: 0.95rem;
 }
 
+.workflow-runs-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-runs-list__item {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.workflow-runs-list__summary {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-runs-list__summary span {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.workflow-runs-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -446,7 +479,8 @@ pre {
 
   .repository-list__actions,
   .workflow-list__item,
-  .workflow-list__meta {
+  .workflow-list__meta,
+  .workflow-runs-list__meta {
     width: 100%;
   }
 
