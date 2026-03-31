@@ -6,13 +6,20 @@ import type {
   GitHubAppStatus,
   GitHubRepositoryDescriptor,
   GitHubWorkflowDescriptor,
+  GitHubWorkflowJobDescriptor,
+  GitHubWorkflowRunDescriptor,
 } from '../github-app.boundary.js';
 import type { GitHubAppEnv } from '../../../infra/config/github-app-env.js';
 import { ConfigurationError } from '../../../shared/errors/configuration-error.js';
 import {
   GitHubRepositoryDiscoveryError,
   GitHubWorkflowCatalogSyncError,
+  GitHubWorkflowRunsSyncError,
 } from '../github-app.errors.js';
+import type {
+  WorkflowExecutionConclusion,
+  WorkflowExecutionStatus,
+} from '../../workflow-runs/workflow-run.entity.js';
 
 const githubInstallationAccessTokenSchema = z.object({
   token: z.string().trim().min(1),
@@ -46,6 +53,34 @@ const githubRepositoryWorkflowsSchema = z.object({
         'disabled_inactivity',
         'disabled_manually',
       ]),
+    }),
+  ),
+});
+
+const githubWorkflowRunsSchema = z.object({
+  workflow_runs: z.array(
+    z.object({
+      id: z.number().int().nonnegative(),
+      status: z.string().trim().min(1),
+      conclusion: z.string().trim().min(1).nullable(),
+      head_branch: z.string().trim().min(1),
+      head_sha: z.string().trim().min(1),
+      event: z.string().trim().min(1),
+      run_started_at: z.string().trim().min(1).nullable(),
+      updated_at: z.string().trim().min(1),
+    }),
+  ),
+});
+
+const githubWorkflowRunJobsSchema = z.object({
+  jobs: z.array(
+    z.object({
+      id: z.number().int().nonnegative(),
+      name: z.string().trim().min(1),
+      status: z.string().trim().min(1),
+      conclusion: z.string().trim().min(1).nullable(),
+      started_at: z.string().trim().min(1).nullable(),
+      completed_at: z.string().trim().min(1).nullable(),
     }),
   ),
 });
@@ -181,6 +216,68 @@ export class GitHubAppProvider implements GitHubAppBoundary {
     }
   }
 
+  public async listWorkflowRuns(
+    repository: GitHubRepositoryDescriptor,
+    workflowId: string,
+  ): Promise<GitHubWorkflowRunDescriptor[]> {
+    this.assertConfigured();
+
+    try {
+      const installationToken = await this.createInstallationAccessToken();
+      const payload = await this.requestJson(
+        `${this.apiBaseUrl}/repos/${repository.owner}/${repository.name}/actions/workflows/${workflowId}/runs?per_page=20`,
+        {
+          method: 'GET',
+          headers: this.createJsonHeaders(`Bearer ${installationToken}`),
+        },
+        githubWorkflowRunsSchema,
+      );
+
+      return payload.workflow_runs.map((workflowRun) =>
+        mapGitHubWorkflowRunDescriptor(workflowRun),
+      );
+    } catch (error) {
+      if (
+        error instanceof ConfigurationError ||
+        error instanceof GitHubWorkflowRunsSyncError
+      ) {
+        throw error;
+      }
+
+      throw new GitHubWorkflowRunsSyncError();
+    }
+  }
+
+  public async listWorkflowRunJobs(
+    repository: GitHubRepositoryDescriptor,
+    workflowRunId: string,
+  ): Promise<GitHubWorkflowJobDescriptor[]> {
+    this.assertConfigured();
+
+    try {
+      const installationToken = await this.createInstallationAccessToken();
+      const payload = await this.requestJson(
+        `${this.apiBaseUrl}/repos/${repository.owner}/${repository.name}/actions/runs/${workflowRunId}/jobs?per_page=100`,
+        {
+          method: 'GET',
+          headers: this.createJsonHeaders(`Bearer ${installationToken}`),
+        },
+        githubWorkflowRunJobsSchema,
+      );
+
+      return payload.jobs.map((job) => mapGitHubWorkflowJobDescriptor(job));
+    } catch (error) {
+      if (
+        error instanceof ConfigurationError ||
+        error instanceof GitHubWorkflowRunsSyncError
+      ) {
+        throw error;
+      }
+
+      throw new GitHubWorkflowRunsSyncError();
+    }
+  }
+
   private async createInstallationAccessToken(): Promise<string> {
     const config = this.config;
 
@@ -224,7 +321,7 @@ export class GitHubAppProvider implements GitHubAppBoundary {
     });
 
     if (!response.ok) {
-      throw new GitHubRepositoryDiscoveryError();
+      throw new Error(`GitHub request failed with status ${response.status}.`);
     }
 
     const payload: unknown = await response.json();
@@ -262,4 +359,97 @@ const createGitHubAppJwt = (config: GitHubAppEnv, now: Date): string => {
   ).toString('base64url');
 
   return `${signingInput}.${signature}`;
+};
+
+const mapGitHubWorkflowRunDescriptor = (
+  workflowRun: z.infer<typeof githubWorkflowRunsSchema>['workflow_runs'][number],
+): GitHubWorkflowRunDescriptor => {
+  const status = mapWorkflowExecutionStatus(workflowRun.status);
+  const startedAt = parseGitHubDate(workflowRun.run_started_at);
+  const finishedAt =
+    status === 'completed' ? parseGitHubDate(workflowRun.updated_at) : null;
+
+  return {
+    githubRunId: String(workflowRun.id),
+    status,
+    conclusion: mapWorkflowExecutionConclusion(workflowRun.conclusion),
+    branch: workflowRun.head_branch,
+    sha: workflowRun.head_sha,
+    event: workflowRun.event,
+    startedAt,
+    finishedAt,
+    durationMs: calculateDurationMs(startedAt, finishedAt),
+  };
+};
+
+const mapGitHubWorkflowJobDescriptor = (
+  workflowJob: z.infer<typeof githubWorkflowRunJobsSchema>['jobs'][number],
+): GitHubWorkflowJobDescriptor => {
+  return {
+    githubJobId: String(workflowJob.id),
+    name: workflowJob.name,
+    status: mapWorkflowExecutionStatus(workflowJob.status),
+    conclusion: mapWorkflowExecutionConclusion(workflowJob.conclusion),
+    startedAt: parseGitHubDate(workflowJob.started_at),
+    finishedAt: parseGitHubDate(workflowJob.completed_at),
+  };
+};
+
+const mapWorkflowExecutionStatus = (
+  value: string,
+): WorkflowExecutionStatus => {
+  switch (value) {
+    case 'queued':
+    case 'in_progress':
+    case 'completed':
+    case 'pending':
+    case 'waiting':
+    case 'requested':
+      return value;
+    default:
+      throw new GitHubWorkflowRunsSyncError();
+  }
+};
+
+const mapWorkflowExecutionConclusion = (
+  value: string | null,
+): WorkflowExecutionConclusion | null => {
+  if (value === null) {
+    return null;
+  }
+
+  switch (value) {
+    case 'success':
+    case 'failure':
+    case 'neutral':
+    case 'cancelled':
+    case 'skipped':
+    case 'timed_out':
+    case 'action_required':
+    case 'stale':
+    case 'startup_failure':
+      return value;
+    default:
+      throw new GitHubWorkflowRunsSyncError();
+  }
+};
+
+const parseGitHubDate = (value: string | null): Date | null => {
+  if (value === null) {
+    return null;
+  }
+
+  return new Date(value);
+};
+
+const calculateDurationMs = (
+  startedAt: Date | null,
+  finishedAt: Date | null,
+): number | null => {
+  if (!startedAt || !finishedAt) {
+    return null;
+  }
+
+  const durationMs = finishedAt.getTime() - startedAt.getTime();
+  return durationMs >= 0 ? durationMs : null;
 };

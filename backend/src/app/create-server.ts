@@ -19,6 +19,9 @@ import { RepositoryService } from '../modules/repository-registry/repository.ser
 import { PrismaWorkflowRepository } from '../modules/workflow-catalog/workflow.prisma-repository.js';
 import type { WorkflowRepository } from '../modules/workflow-catalog/workflow.repository.js';
 import { WorkflowService } from '../modules/workflow-catalog/workflow.service.js';
+import { PrismaWorkflowRunRepository } from '../modules/workflow-runs/workflow-run.prisma-repository.js';
+import type { WorkflowRunRepository } from '../modules/workflow-runs/workflow-run.repository.js';
+import { WorkflowRunService } from '../modules/workflow-runs/workflow-run.service.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 export interface CreateServerOptions {
@@ -29,6 +32,7 @@ export interface CreateServerOptions {
   githubBoundary?: GitHubAppBoundary;
   repositoryRegistryRepository?: RepositoryRepository;
   workflowCatalogRepository?: WorkflowRepository;
+  workflowRunRepository?: WorkflowRunRepository;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -46,7 +50,9 @@ export const createServer = (options: CreateServerOptions) => {
   );
 
   const prismaClient =
-    options.repositoryRegistryRepository && options.workflowCatalogRepository
+    options.repositoryRegistryRepository &&
+    options.workflowCatalogRepository &&
+    options.workflowRunRepository
       ? null
       : createPrismaClient();
   const githubBoundary =
@@ -60,6 +66,12 @@ export const createServer = (options: CreateServerOptions) => {
   const workflowCatalogRepository =
     options.workflowCatalogRepository ??
     new PrismaWorkflowRepository(prismaClient!.workflow);
+  const workflowRunRepository =
+    options.workflowRunRepository ??
+    new PrismaWorkflowRunRepository({
+      workflowRun: prismaClient!.workflowRun,
+      workflowJob: prismaClient!.workflowJob,
+    });
   const healthService = new HealthService({
     githubBoundary,
     repository: healthRepository,
@@ -70,10 +82,18 @@ export const createServer = (options: CreateServerOptions) => {
     githubBoundary,
     logger: app.log,
   });
+  const workflowRunService = new WorkflowRunService({
+    repositoryRegistryRepository,
+    workflowRepository: workflowCatalogRepository,
+    workflowRunRepository,
+    githubBoundary,
+    logger: app.log,
+  });
   const repositoryService = new RepositoryService({
     repository: repositoryRegistryRepository,
     githubBoundary,
     workflowCatalogSync: workflowService,
+    workflowRunSync: workflowRunService,
     logger: app.log,
   });
 

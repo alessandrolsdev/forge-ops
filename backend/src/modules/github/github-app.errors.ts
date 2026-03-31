@@ -20,6 +20,16 @@ export class GitHubWorkflowCatalogSyncError extends ApplicationError {
   }
 }
 
+export class GitHubWorkflowRunsSyncError extends ApplicationError {
+  constructor() {
+    super(
+      'GitHub workflow runs are currently unavailable.',
+      503,
+      'github_workflow_runs_unavailable',
+    );
+  }
+}
+
 export class GitHubWebhookVerificationError extends ApplicationError {
   constructor() {
     super(

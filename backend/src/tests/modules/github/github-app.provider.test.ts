@@ -3,6 +3,7 @@ import { createGitHubAppBoundary } from '../../../modules/github/github-app.boun
 import {
   GitHubRepositoryDiscoveryError,
   GitHubWorkflowCatalogSyncError,
+  GitHubWorkflowRunsSyncError,
 } from '../../../modules/github/github-app.errors.js';
 
 const buildConfig = () => ({
@@ -215,5 +216,234 @@ describe('GitHubAppProvider', () => {
       message: 'GitHub workflow catalog is currently unavailable.',
       statusCode: 503,
     });
+  });
+
+  it('should exchange credentials and normalize workflow runs', async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'installation-token' }), {
+          status: 201,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workflow_runs: [
+              {
+                id: 777,
+                status: 'completed',
+                conclusion: 'success',
+                head_branch: 'main',
+                head_sha: 'abc123def456',
+                event: 'push',
+                run_started_at: '2026-03-30T12:00:00.000Z',
+                updated_at: '2026-03-30T12:05:00.000Z',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-30T12:10:00.000Z'),
+    });
+
+    await expect(
+      boundary.listWorkflowRuns(
+        {
+          owner: 'forgeops',
+          name: 'backend',
+        },
+        '555',
+      ),
+    ).resolves.toEqual([
+      {
+        githubRunId: '777',
+        status: 'completed',
+        conclusion: 'success',
+        branch: 'main',
+        sha: 'abc123def456',
+        event: 'push',
+        startedAt: new Date('2026-03-30T12:00:00.000Z'),
+        finishedAt: new Date('2026-03-30T12:05:00.000Z'),
+        durationMs: 300000,
+      },
+    ]);
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      'https://api.github.test/repos/forgeops/backend/actions/workflows/555/runs?per_page=20',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Accept: 'application/vnd.github+json',
+          Authorization: 'Bearer installation-token',
+        }),
+      }),
+    );
+  });
+
+  it('should exchange credentials and normalize workflow run jobs', async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'installation-token' }), {
+          status: 201,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                id: 888,
+                name: 'lint',
+                status: 'completed',
+                conclusion: 'success',
+                started_at: '2026-03-30T12:01:00.000Z',
+                completed_at: '2026-03-30T12:02:00.000Z',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-30T12:10:00.000Z'),
+    });
+
+    await expect(
+      boundary.listWorkflowRunJobs(
+        {
+          owner: 'forgeops',
+          name: 'backend',
+        },
+        '777',
+      ),
+    ).resolves.toEqual([
+      {
+        githubJobId: '888',
+        name: 'lint',
+        status: 'completed',
+        conclusion: 'success',
+        startedAt: new Date('2026-03-30T12:01:00.000Z'),
+        finishedAt: new Date('2026-03-30T12:02:00.000Z'),
+      },
+    ]);
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      'https://api.github.test/repos/forgeops/backend/actions/runs/777/jobs?per_page=100',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Accept: 'application/vnd.github+json',
+          Authorization: 'Bearer installation-token',
+        }),
+      }),
+    );
+  });
+
+  it('should raise a safe workflow runs sync error when run sync fails', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'rate limited' }), {
+        status: 403,
+        headers: {
+          'content-type': 'application/json',
+        },
+      }),
+    );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-30T12:00:00.000Z'),
+    });
+
+    await expect(
+      boundary.listWorkflowRuns(
+        {
+          owner: 'forgeops',
+          name: 'backend',
+        },
+        '555',
+      ),
+    ).rejects.toBeInstanceOf(GitHubWorkflowRunsSyncError);
+  });
+
+  it('should fail safely when GitHub returns an unsupported workflow run status', async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'installation-token' }), {
+          status: 201,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workflow_runs: [
+              {
+                id: 777,
+                status: 'mystery_status',
+                conclusion: null,
+                head_branch: 'main',
+                head_sha: 'abc123def456',
+                event: 'push',
+                run_started_at: null,
+                updated_at: '2026-03-30T12:05:00.000Z',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-30T12:00:00.000Z'),
+    });
+
+    await expect(
+      boundary.listWorkflowRuns(
+        {
+          owner: 'forgeops',
+          name: 'backend',
+        },
+        '555',
+      ),
+    ).rejects.toBeInstanceOf(GitHubWorkflowRunsSyncError);
   });
 });
