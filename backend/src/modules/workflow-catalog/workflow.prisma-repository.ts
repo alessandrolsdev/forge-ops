@@ -60,6 +60,11 @@ type WorkflowDelegate = {
       createdAt: 'asc' | 'desc';
     };
   }): Promise<WorkflowRecord[]>;
+  findUnique(args: {
+    where: {
+      id: string;
+    };
+  }): Promise<WorkflowRecord | null>;
 };
 
 const isUniqueConstraintError = (error: unknown): boolean => {
@@ -117,6 +122,16 @@ export class PrismaWorkflowRepository implements WorkflowRepository {
     });
 
     return records.map(toWorkflow);
+  }
+
+  async findById(id: string): Promise<Workflow | null> {
+    const record = await this.workflow.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    return record ? toWorkflow(record) : null;
   }
 
   async upsert(input: CreateWorkflowInput): Promise<Workflow> {

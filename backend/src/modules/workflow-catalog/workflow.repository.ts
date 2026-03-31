@@ -4,4 +4,5 @@ export interface WorkflowRepository {
   create(input: CreateWorkflowInput): Promise<Workflow>;
   upsert(input: CreateWorkflowInput): Promise<Workflow>;
   listByRepositoryId(repositoryId: string): Promise<Workflow[]>;
+  findById(id: string): Promise<Workflow | null>;
 }

@@ -5,3 +5,9 @@ export class WorkflowAlreadyExistsError extends ApplicationError {
     super(message, 409, 'workflow_already_exists');
   }
 }
+
+export class WorkflowNotFoundError extends ApplicationError {
+  constructor(message = 'Workflow was not found.') {
+    super(message, 404, 'workflow_not_found');
+  }
+}
