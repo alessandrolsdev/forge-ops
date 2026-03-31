@@ -204,6 +204,7 @@ const createProtectedServer = (overrides?: {
       },
       listWorkflowRuns: async () => [],
       listWorkflowRunJobs: async () => [],
+      listPullRequests: async () => [],
     },
     repositoryRegistryRepository: {
       list: async () => [...repositoryStore],

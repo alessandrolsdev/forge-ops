@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createGitHubAppBoundary } from '../../../modules/github/github-app.boundary.js';
 import {
   GitHubRepositoryDiscoveryError,
+  GitHubPullRequestSyncError,
   GitHubWorkflowCatalogSyncError,
   GitHubWorkflowRunsSyncError,
 } from '../../../modules/github/github-app.errors.js';
@@ -392,6 +393,131 @@ describe('GitHubAppProvider', () => {
         '555',
       ),
     ).rejects.toBeInstanceOf(GitHubWorkflowRunsSyncError);
+  });
+
+  it('should exchange credentials and normalize pull requests', async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'installation-token' }), {
+          status: 201,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 9001,
+              number: 42,
+              title: 'Add pull request insights',
+              state: 'open',
+              merged_at: null,
+              user: {
+                login: 'alessandrolsdev',
+              },
+              base: {
+                ref: 'main',
+              },
+              head: {
+                ref: 'feature/pull-request-insights',
+              },
+            },
+            {
+              id: 9002,
+              number: 43,
+              title: 'Close flaky workflow gap',
+              state: 'closed',
+              merged_at: '2026-03-31T18:00:00.000Z',
+              user: {
+                login: 'codex-bot',
+              },
+              base: {
+                ref: 'main',
+              },
+              head: {
+                ref: 'feature/flaky-workflow-gap',
+              },
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-31T18:10:00.000Z'),
+    });
+
+    await expect(
+      boundary.listPullRequests({
+        owner: 'forgeops',
+        name: 'backend',
+      }),
+    ).resolves.toEqual([
+      {
+        githubPrId: '9001',
+        number: 42,
+        title: 'Add pull request insights',
+        state: 'open',
+        author: 'alessandrolsdev',
+        baseBranch: 'main',
+        headBranch: 'feature/pull-request-insights',
+      },
+      {
+        githubPrId: '9002',
+        number: 43,
+        title: 'Close flaky workflow gap',
+        state: 'merged',
+        author: 'codex-bot',
+        baseBranch: 'main',
+        headBranch: 'feature/flaky-workflow-gap',
+      },
+    ]);
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      'https://api.github.test/repos/forgeops/backend/pulls?state=all&per_page=100&sort=updated&direction=desc',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Accept: 'application/vnd.github+json',
+          Authorization: 'Bearer installation-token',
+        }),
+      }),
+    );
+  });
+
+  it('should raise a safe pull request sync error when pull request sync fails', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'rate limited' }), {
+        status: 403,
+        headers: {
+          'content-type': 'application/json',
+        },
+      }),
+    );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-03-31T18:00:00.000Z'),
+    });
+
+    await expect(
+      boundary.listPullRequests({
+        owner: 'forgeops',
+        name: 'backend',
+      }),
+    ).rejects.toBeInstanceOf(GitHubPullRequestSyncError);
   });
 
   it('should fail safely when GitHub returns an unsupported workflow run status', async () => {
