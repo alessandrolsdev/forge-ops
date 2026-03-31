@@ -33,9 +33,48 @@ model Workflow {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   repository       Repository         @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  runs             WorkflowRun[]
 
   @@unique([repositoryId, githubWorkflowId])
   @@index([repositoryId, createdAt])
+}
+
+model WorkflowRun {
+  id         String                      @id @default(cuid())
+  workflowId String
+  githubRunId String
+  status     WorkflowExecutionStatus
+  conclusion WorkflowExecutionConclusion?
+  branch     String
+  sha        String
+  event      String
+  startedAt  DateTime?
+  finishedAt DateTime?
+  durationMs Int?
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
+  workflow   Workflow                    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  jobs       WorkflowJob[]
+
+  @@unique([workflowId, githubRunId])
+  @@index([workflowId, startedAt])
+}
+
+model WorkflowJob {
+  id            String                      @id @default(cuid())
+  workflowRunId String
+  githubJobId   String
+  name          String
+  status        WorkflowExecutionStatus
+  conclusion    WorkflowExecutionConclusion?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+  workflowRun   WorkflowRun                 @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowRunId, githubJobId])
+  @@index([workflowRunId, startedAt])
 }
 
 enum WorkflowState {
@@ -49,5 +88,26 @@ enum WorkflowState {
 enum WorkflowSourceType {
   local
   reusable
+}
+
+enum WorkflowExecutionStatus {
+  queued
+  in_progress
+  completed
+  pending
+  waiting
+  requested
+}
+
+enum WorkflowExecutionConclusion {
+  success
+  failure
+  neutral
+  cancelled
+  skipped
+  timed_out
+  action_required
+  stale
+  startup_failure
 }
 
