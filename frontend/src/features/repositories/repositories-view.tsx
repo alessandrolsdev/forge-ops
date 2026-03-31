@@ -12,6 +12,7 @@ import {
   type MonitoredRepository,
   type RepositoryDiscoveryItem,
   type WorkflowCatalogItem,
+  type WorkflowRunDetailResponse,
   type WorkflowRunItem,
 } from '@/lib/api/client';
 
@@ -20,6 +21,7 @@ const EMPTY_MONITORED_REPOSITORIES: MonitoredRepository[] = [];
 const EMPTY_DISCOVERED_REPOSITORIES: RepositoryDiscoveryItem[] = [];
 const EMPTY_WORKFLOWS: WorkflowCatalogItem[] = [];
 const EMPTY_WORKFLOW_RUNS: WorkflowRunItem[] = [];
+const EMPTY_WORKFLOW_RUN_DETAIL_JOBS: WorkflowRunDetailResponse['jobs'] = [];
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof ApiClientError) {
@@ -63,6 +65,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   const [accessToken, setAccessToken] = useState('');
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>(null);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const [selectedWorkflowRunId, setSelectedWorkflowRunId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const hasAccessToken = accessToken.trim().length > 0;
@@ -147,6 +150,48 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     retry: false,
   });
 
+  const workflowRuns = workflowRunsQuery.data ?? EMPTY_WORKFLOW_RUNS;
+
+  useEffect(() => {
+    if (workflowRuns.length === 0) {
+      setSelectedWorkflowRunId(null);
+      return;
+    }
+
+    if (!selectedWorkflowRunId) {
+      return;
+    }
+
+    const selectedExists = workflowRuns.some((workflowRun) => workflowRun.id === selectedWorkflowRunId);
+
+    if (!selectedExists) {
+      setSelectedWorkflowRunId(null);
+    }
+  }, [workflowRuns, selectedWorkflowRunId]);
+
+  const workflowRunDetailQuery = useQuery({
+    queryKey: [
+      'workflow-run-detail',
+      accessToken,
+      selectedRepositoryId,
+      selectedWorkflowId,
+      selectedWorkflowRunId,
+    ],
+    queryFn: () =>
+      client.getWorkflowRunDetail(
+        accessToken,
+        selectedRepositoryId!,
+        selectedWorkflowId!,
+        selectedWorkflowRunId!,
+      ),
+    enabled:
+      hasAccessToken &&
+      selectedRepositoryId !== null &&
+      selectedWorkflowId !== null &&
+      selectedWorkflowRunId !== null,
+    retry: false,
+  });
+
   const createRepositoryMutation = useMutation({
     mutationFn: (repository: RepositoryDiscoveryItem) =>
       client.createRepository(accessToken, {
@@ -169,6 +214,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
         queryClient.invalidateQueries({
           queryKey: ['workflow-runs', accessToken, repository.id],
         }),
+        queryClient.invalidateQueries({
+          queryKey: ['workflow-run-detail', accessToken, repository.id],
+        }),
       ]);
     },
     onError: (error) => {
@@ -189,7 +237,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     monitoredRepositories.find((repository) => repository.id === selectedRepositoryId) ?? null;
   const selectedWorkflow =
     repositoryWorkflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null;
-  const workflowRuns = workflowRunsQuery.data ?? EMPTY_WORKFLOW_RUNS;
+  const selectedWorkflowRun =
+    workflowRuns.find((workflowRun) => workflowRun.id === selectedWorkflowRunId) ?? null;
+  const workflowRunDetail = workflowRunDetailQuery.data;
 
   const submitAccessToken = () => {
     const normalizedToken = draftAccessToken.trim();
@@ -211,6 +261,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     setAccessToken('');
     setSelectedRepositoryId(null);
     setSelectedWorkflowId(null);
+    setSelectedWorkflowRunId(null);
     setTokenError(null);
     setStatusMessage(null);
     void queryClient.removeQueries({
@@ -224,6 +275,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     });
     void queryClient.removeQueries({
       queryKey: ['workflow-runs'],
+    });
+    void queryClient.removeQueries({
+      queryKey: ['workflow-run-detail'],
     });
   };
 
@@ -491,9 +545,106 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
                     duration: {formatDuration(run.durationMs)}
                   </span>
                 </div>
+                <div className="workflow-runs-list__actions">
+                  <Button
+                    variant={run.id === selectedWorkflowRunId ? 'secondary' : 'primary'}
+                    onClick={() => setSelectedWorkflowRunId(run.id)}
+                  >
+                    {run.id === selectedWorkflowRunId ? 'Viewing run detail' : 'View run detail'}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
+        )}
+      </Card>
+
+      <Card
+        eyebrow="Workflow run detail"
+        title={selectedWorkflowRun ? `Run #${selectedWorkflowRun.githubRunId}` : 'Workflow run detail'}
+      >
+        {!hasAccessToken ? (
+          <p className="empty-state">
+            Add an operator token to inspect workflow run details.
+          </p>
+        ) : !selectedRepository ? (
+          <p className="empty-state">Select a repository to inspect run details.</p>
+        ) : !selectedWorkflow ? (
+          <p className="empty-state">Select a workflow to inspect run details.</p>
+        ) : workflowRunsQuery.isLoading ? (
+          <p className="empty-state">Loading workflow runs before showing run detail...</p>
+        ) : workflowRuns.length === 0 ? (
+          <p className="empty-state">
+            No workflow runs are available yet for this workflow.
+          </p>
+        ) : !selectedWorkflowRun ? (
+          <p className="empty-state">Select a workflow run to load detail.</p>
+        ) : workflowRunDetailQuery.isLoading ? (
+          <p className="empty-state">Loading workflow run detail...</p>
+        ) : workflowRunDetailQuery.isError ? (
+          <p className="empty-state">
+            {getErrorMessage(workflowRunDetailQuery.error, 'Unable to load workflow run detail.')}
+          </p>
+        ) : !workflowRunDetail ? (
+          <p className="empty-state">Workflow run detail is unavailable.</p>
+        ) : (
+          <div className="workflow-run-detail">
+            <div className="workflow-runs-list__meta">
+              <span className="repository-list__badge repository-list__badge--neutral">
+                status: {workflowRunDetail.run.status}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                conclusion: {workflowRunDetail.run.conclusion ?? 'n/a'}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                branch: {workflowRunDetail.run.branch}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                event: {workflowRunDetail.run.event}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                started: {formatTimestamp(workflowRunDetail.run.startedAt)}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                finished: {formatTimestamp(workflowRunDetail.run.finishedAt)}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                duration: {formatDuration(workflowRunDetail.run.durationMs)}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                jobs: {workflowRunDetail.jobs.length}
+              </span>
+            </div>
+
+            {workflowRunDetail.jobs.length === 0 ? (
+              <p className="empty-state">No jobs were synchronized for this workflow run.</p>
+            ) : (
+              <ul className="workflow-jobs-list">
+                {(workflowRunDetail.jobs ?? EMPTY_WORKFLOW_RUN_DETAIL_JOBS).map((job) => (
+                  <li key={job.id} className="workflow-jobs-list__item">
+                    <div className="workflow-jobs-list__summary">
+                      <strong>{job.name}</strong>
+                      <span>job id: {job.githubJobId}</span>
+                    </div>
+                    <div className="workflow-runs-list__meta">
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        status: {job.status}
+                      </span>
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        conclusion: {job.conclusion ?? 'n/a'}
+                      </span>
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        started: {formatTimestamp(job.startedAt)}
+                      </span>
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        finished: {formatTimestamp(job.finishedAt)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </Card>
     </div>

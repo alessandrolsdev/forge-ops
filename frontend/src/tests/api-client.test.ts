@@ -281,6 +281,97 @@ describe('createApiClient', () => {
     );
   });
 
+  it('should fetch workflow run detail with jobs', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          run: {
+            id: 'run_123',
+            workflowId: 'workflow_123',
+            githubRunId: '1001',
+            status: 'completed',
+            conclusion: 'success',
+            branch: 'main',
+            sha: 'abcdef123456',
+            event: 'push',
+            startedAt: '2026-03-31T11:00:00.000Z',
+            finishedAt: '2026-03-31T11:03:00.000Z',
+            durationMs: 180000,
+            createdAt: '2026-03-31T11:00:00.000Z',
+            updatedAt: '2026-03-31T11:03:00.000Z',
+          },
+          jobs: [
+            {
+              id: 'job_123',
+              workflowRunId: 'run_123',
+              githubJobId: 'job-gh-1',
+              name: 'lint',
+              status: 'completed',
+              conclusion: 'success',
+              startedAt: '2026-03-31T11:00:30.000Z',
+              finishedAt: '2026-03-31T11:01:00.000Z',
+              createdAt: '2026-03-31T11:00:30.000Z',
+              updatedAt: '2026-03-31T11:01:00.000Z',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'http://localhost:3333',
+      fetcher,
+    });
+
+    await expect(
+      client.getWorkflowRunDetail('trusted-token', 'repo_123', 'workflow_123', 'run_123'),
+    ).resolves.toEqual({
+      run: {
+        id: 'run_123',
+        workflowId: 'workflow_123',
+        githubRunId: '1001',
+        status: 'completed',
+        conclusion: 'success',
+        branch: 'main',
+        sha: 'abcdef123456',
+        event: 'push',
+        startedAt: '2026-03-31T11:00:00.000Z',
+        finishedAt: '2026-03-31T11:03:00.000Z',
+        durationMs: 180000,
+        createdAt: '2026-03-31T11:00:00.000Z',
+        updatedAt: '2026-03-31T11:03:00.000Z',
+      },
+      jobs: [
+        {
+          id: 'job_123',
+          workflowRunId: 'run_123',
+          githubJobId: 'job-gh-1',
+          name: 'lint',
+          status: 'completed',
+          conclusion: 'success',
+          startedAt: '2026-03-31T11:00:30.000Z',
+          finishedAt: '2026-03-31T11:01:00.000Z',
+          createdAt: '2026-03-31T11:00:30.000Z',
+          updatedAt: '2026-03-31T11:01:00.000Z',
+        },
+      ],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      'http://localhost:3333/api/v1/repositories/repo_123/workflows/workflow_123/runs/run_123',
+      {
+        headers: {
+          accept: 'application/json',
+          authorization: 'Bearer trusted-token',
+        },
+      },
+    );
+  });
+
   it('should create repositories and surface structured API errors', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
