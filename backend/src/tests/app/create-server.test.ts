@@ -122,6 +122,7 @@ const buildWorkflowJob = (overrides: Partial<WorkflowJob> = {}): WorkflowJob => 
 const createProtectedServer = (overrides?: {
   repositories?: Repository[];
   workflows?: Workflow[];
+  workflowRuns?: WorkflowRun[];
   createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
   deleteRepositoryById?: (id: string) => Promise<void>;
   installationRepositories?: GitHubInstallationRepository[];
@@ -138,7 +139,7 @@ const createProtectedServer = (overrides?: {
 }) => {
   const repositoryStore = [...(overrides?.repositories ?? [])];
   const workflowStore = [...(overrides?.workflows ?? [])];
-  const workflowRunStore: WorkflowRun[] = [];
+  const workflowRunStore: WorkflowRun[] = [...(overrides?.workflowRuns ?? [])];
   const workflowJobStore: WorkflowJob[] = [];
 
   return createServer({
@@ -266,6 +267,8 @@ const createProtectedServer = (overrides?: {
       },
       listByRepositoryId: async (repositoryId) =>
         workflowStore.filter((workflow) => workflow.repositoryId === repositoryId),
+      findById: async (id) =>
+        workflowStore.find((workflow) => workflow.id === id) ?? null,
     },
     workflowRunRepository: {
       createRun: async (input) =>
@@ -313,7 +316,9 @@ const createProtectedServer = (overrides?: {
         return workflowRun;
       },
       listRunsByWorkflowId: async (workflowId) =>
-        workflowRunStore.filter((workflowRun) => workflowRun.workflowId === workflowId),
+        workflowRunStore
+          .filter((workflowRun) => workflowRun.workflowId === workflowId)
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
       createJob: async (input) =>
         buildWorkflowJob({
           workflowRunId: input.workflowRunId,
@@ -1100,6 +1105,194 @@ describe('createServer', () => {
           sourceType: 'reusable',
           createdAt: '2026-03-30T15:10:00.000Z',
           updatedAt: '2026-03-30T15:10:00.000Z',
+        },
+      ],
+    });
+
+    await server.close();
+  });
+
+  it('should keep workflow run routes protected', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [buildWorkflow()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/workflows/workflow_123/runs',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'authentication_required',
+        message: 'Authentication is required.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should reject invalid workflow run route params before service execution', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [buildWorkflow()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/%20/workflows/workflow_123/runs',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'validation_error',
+        message: 'String must contain at least 1 character(s)',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return not found when the workflow runs repository does not exist', async () => {
+    const server = createProtectedServer();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_missing/workflows/workflow_123/runs',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'repository_not_found',
+        message: 'Repository was not found.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return not found when the workflow does not belong to the repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [
+        buildWorkflow({
+          id: 'workflow_other',
+          repositoryId: 'repo_other',
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/workflows/workflow_other/runs',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'workflow_not_found',
+        message: 'Workflow was not found.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return an empty workflow runs list when the workflow has no persisted runs', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [buildWorkflow()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/workflows/workflow_123/runs',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      runs: [],
+    });
+
+    await server.close();
+  });
+
+  it('should list workflow runs for an authenticated operator', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [buildWorkflow()],
+      workflowRuns: [
+        buildWorkflowRun({
+          id: 'run_older',
+          githubRunId: 'run-gh-older',
+          status: 'completed',
+          conclusion: 'failure',
+          startedAt: new Date('2026-03-30T15:00:00.000Z'),
+          finishedAt: new Date('2026-03-30T15:04:00.000Z'),
+          durationMs: 240000,
+          createdAt: new Date('2026-03-30T15:00:00.000Z'),
+          updatedAt: new Date('2026-03-30T15:04:00.000Z'),
+        }),
+        buildWorkflowRun(),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/workflows/workflow_123/runs',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      runs: [
+        {
+          id: 'run_123',
+          workflowId: 'workflow_123',
+          githubRunId: 'run-gh-123',
+          status: 'completed',
+          conclusion: 'success',
+          branch: 'main',
+          sha: 'abc123def456',
+          event: 'push',
+          startedAt: '2026-03-30T16:00:00.000Z',
+          finishedAt: '2026-03-30T16:05:00.000Z',
+          durationMs: 300000,
+          createdAt: '2026-03-30T16:00:00.000Z',
+          updatedAt: '2026-03-30T16:00:00.000Z',
+        },
+        {
+          id: 'run_older',
+          workflowId: 'workflow_123',
+          githubRunId: 'run-gh-older',
+          status: 'completed',
+          conclusion: 'failure',
+          branch: 'main',
+          sha: 'abc123def456',
+          event: 'push',
+          startedAt: '2026-03-30T15:00:00.000Z',
+          finishedAt: '2026-03-30T15:04:00.000Z',
+          durationMs: 240000,
+          createdAt: '2026-03-30T15:00:00.000Z',
+          updatedAt: '2026-03-30T15:04:00.000Z',
         },
       ],
     });

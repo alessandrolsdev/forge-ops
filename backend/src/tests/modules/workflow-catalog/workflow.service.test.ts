@@ -83,6 +83,7 @@ describe('WorkflowService', () => {
         create: vi.fn(),
         upsert,
         listByRepositoryId,
+        findById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -163,6 +164,7 @@ describe('WorkflowService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         listByRepositoryId: vi.fn(),
+        findById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -214,6 +216,7 @@ describe('WorkflowService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         listByRepositoryId: vi.fn(),
+        findById: vi.fn(),
       },
       githubBoundary: {
         mode: 'github-app',
