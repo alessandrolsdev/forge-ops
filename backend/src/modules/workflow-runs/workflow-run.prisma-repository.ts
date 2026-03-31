@@ -95,6 +95,11 @@ type WorkflowRunDelegate = {
       createdAt?: 'asc' | 'desc';
     }>;
   }): Promise<WorkflowRunRecord[]>;
+  findUnique?(args: {
+    where: {
+      id: string;
+    };
+  }): Promise<WorkflowRunRecord | null>;
 };
 
 type WorkflowJobDelegate = {
@@ -260,6 +265,20 @@ export class PrismaWorkflowRunRepository implements WorkflowRunRepository {
     });
 
     return records.map(toWorkflowRun);
+  }
+
+  async findRunById(id: string): Promise<WorkflowRun | null> {
+    if (!this.options.workflowRun.findUnique) {
+      return null;
+    }
+
+    const record = await this.options.workflowRun.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    return record ? toWorkflowRun(record) : null;
   }
 
   async createJob(input: CreateWorkflowJobInput): Promise<WorkflowJob> {
