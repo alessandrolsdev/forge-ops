@@ -27,6 +27,12 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Skip fork pull requests
         if: ${{ github.event.pull_request.head.repo.fork }}
         run: |
@@ -48,7 +54,7 @@ jobs:
       - name: Collect pull request context
         id: pr-context
         if: ${{ !github.event.pull_request.head.repo.fork && vars.CODEX_REVIEW_ENABLED == 'true' && steps.openai-key.outputs.present == 'true' }}
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -104,9 +110,10 @@ jobs:
           request_path="$RUNNER_TEMP/codex-review/request.json"
           response_path="$RUNNER_TEMP/codex-review/response.json"
           review_path="$RUNNER_TEMP/codex-review/review.md"
+          prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
 
           jq -n \
-            --rawfile prompt .github/prompts/codex-review.md \
+            --rawfile prompt "$prompt_path" \
             --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
             --rawfile diff "$PR_CONTEXT_DIR/pr.diff" \
             '{
@@ -169,7 +176,7 @@ jobs:
 
       - name: Publish Codex review status
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        uses: actions/github-script@v8
         env:
           CODEX_REVIEW_ENABLED: ${{ vars.CODEX_REVIEW_ENABLED }}
           OPENAI_API_KEY_PRESENT: ${{ steps.openai-key.outputs.present }}
