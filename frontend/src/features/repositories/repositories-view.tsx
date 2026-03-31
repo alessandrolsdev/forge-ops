@@ -11,11 +11,15 @@ import {
   type ForgeOpsApiClient,
   type MonitoredRepository,
   type RepositoryDiscoveryItem,
+  type WorkflowCatalogItem,
+  type WorkflowRunItem,
 } from '@/lib/api/client';
 
 const STORAGE_KEY = 'forgeops.operator-access-token';
 const EMPTY_MONITORED_REPOSITORIES: MonitoredRepository[] = [];
 const EMPTY_DISCOVERED_REPOSITORIES: RepositoryDiscoveryItem[] = [];
+const EMPTY_WORKFLOWS: WorkflowCatalogItem[] = [];
+const EMPTY_WORKFLOW_RUNS: WorkflowRunItem[] = [];
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof ApiClientError) {
@@ -29,6 +33,26 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
+const formatTimestamp = (value: string | null): string => {
+  if (!value) {
+    return 'n/a';
+  }
+
+  return new Date(value).toLocaleString();
+};
+
+const formatDuration = (durationMs: number | null): string => {
+  if (durationMs === null) {
+    return 'n/a';
+  }
+
+  const totalSeconds = Math.round(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}m ${seconds}s`;
+};
+
 interface RepositoriesViewProps {
   client?: ForgeOpsApiClient;
 }
@@ -38,6 +62,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   const [draftAccessToken, setDraftAccessToken] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>(null);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const hasAccessToken = accessToken.trim().length > 0;
@@ -95,6 +120,33 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     retry: false,
   });
 
+  const repositoryWorkflows = workflowsQuery.data ?? EMPTY_WORKFLOWS;
+
+  useEffect(() => {
+    if (repositoryWorkflows.length === 0) {
+      setSelectedWorkflowId(null);
+      return;
+    }
+
+    const selectedExists = repositoryWorkflows.some(
+      (workflow) => workflow.id === selectedWorkflowId,
+    );
+    const firstWorkflow = repositoryWorkflows[0];
+
+    if (!selectedWorkflowId || !selectedExists) {
+      setSelectedWorkflowId(firstWorkflow?.id ?? null);
+    }
+  }, [repositoryWorkflows, selectedWorkflowId]);
+
+  const workflowRunsQuery = useQuery({
+    queryKey: ['workflow-runs', accessToken, selectedRepositoryId, selectedWorkflowId],
+    queryFn: () =>
+      client.getWorkflowRuns(accessToken, selectedRepositoryId!, selectedWorkflowId!),
+    enabled:
+      hasAccessToken && selectedRepositoryId !== null && selectedWorkflowId !== null,
+    retry: false,
+  });
+
   const createRepositoryMutation = useMutation({
     mutationFn: (repository: RepositoryDiscoveryItem) =>
       client.createRepository(accessToken, {
@@ -114,6 +166,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
         queryClient.invalidateQueries({
           queryKey: ['repository-workflows', accessToken, repository.id],
         }),
+        queryClient.invalidateQueries({
+          queryKey: ['workflow-runs', accessToken, repository.id],
+        }),
       ]);
     },
     onError: (error) => {
@@ -132,7 +187,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   );
   const selectedRepository =
     monitoredRepositories.find((repository) => repository.id === selectedRepositoryId) ?? null;
-  const repositoryWorkflows = workflowsQuery.data ?? [];
+  const selectedWorkflow =
+    repositoryWorkflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null;
+  const workflowRuns = workflowRunsQuery.data ?? EMPTY_WORKFLOW_RUNS;
 
   const submitAccessToken = () => {
     const normalizedToken = draftAccessToken.trim();
@@ -153,6 +210,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     setDraftAccessToken('');
     setAccessToken('');
     setSelectedRepositoryId(null);
+    setSelectedWorkflowId(null);
     setTokenError(null);
     setStatusMessage(null);
     void queryClient.removeQueries({
@@ -163,6 +221,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     });
     void queryClient.removeQueries({
       queryKey: ['repository-workflows'],
+    });
+    void queryClient.removeQueries({
+      queryKey: ['workflow-runs'],
     });
   };
 
@@ -351,6 +412,83 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
                   </span>
                   <span className="repository-list__badge repository-list__badge--neutral">
                     {workflow.state}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card
+        eyebrow="Workflow runs"
+        title={
+          selectedWorkflow
+            ? `Workflow runs for ${selectedWorkflow.name}`
+            : 'Workflow runs'
+        }
+      >
+        {!hasAccessToken ? (
+          <p className="empty-state">
+            Add an operator token to inspect workflow runs for cataloged workflows.
+          </p>
+        ) : monitoredRepositoriesQuery.isLoading ? (
+          <p className="empty-state">Loading repositories before fetching workflow runs...</p>
+        ) : monitoredRepositories.length === 0 ? (
+          <p className="empty-state">
+            Connect a repository first so ForgeOps can show workflow runs.
+          </p>
+        ) : !selectedRepository ? (
+          <p className="empty-state">
+            Select a monitored repository to inspect workflow runs.
+          </p>
+        ) : workflowsQuery.isLoading ? (
+          <p className="empty-state">Loading workflows before fetching workflow runs...</p>
+        ) : repositoryWorkflows.length === 0 ? (
+          <p className="empty-state">
+            Catalog workflows first before inspecting workflow runs.
+          </p>
+        ) : !selectedWorkflow ? (
+          <p className="empty-state">Select a workflow to inspect workflow runs.</p>
+        ) : workflowRunsQuery.isLoading ? (
+          <p className="empty-state">Loading workflow runs...</p>
+        ) : workflowRunsQuery.isError ? (
+          <p className="empty-state">
+            {getErrorMessage(workflowRunsQuery.error, 'Unable to load workflow runs.')}
+          </p>
+        ) : workflowRuns.length === 0 ? (
+          <p className="empty-state">
+            ForgeOps has not synchronized workflow runs for this workflow yet.
+          </p>
+        ) : (
+          <ul className="workflow-runs-list">
+            {workflowRuns.map((run) => (
+              <li key={run.id} className="workflow-runs-list__item">
+                <div className="workflow-runs-list__summary">
+                  <strong>Run #{run.githubRunId}</strong>
+                  <span>sha {run.sha.slice(0, 12)}</span>
+                </div>
+                <div className="workflow-runs-list__meta">
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    status: {run.status}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    conclusion: {run.conclusion ?? 'n/a'}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    branch: {run.branch}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    event: {run.event}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    started: {formatTimestamp(run.startedAt)}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    finished: {formatTimestamp(run.finishedAt)}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    duration: {formatDuration(run.durationMs)}
                   </span>
                 </div>
               </li>
