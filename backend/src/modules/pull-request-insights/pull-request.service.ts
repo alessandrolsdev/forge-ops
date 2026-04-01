@@ -23,6 +23,17 @@ export interface PullRequestServiceOptions {
 export class PullRequestService {
   constructor(private readonly options: PullRequestServiceOptions) {}
 
+  async listByRepositoryId(repositoryId: string): Promise<PullRequest[]> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
+    return this.options.pullRequestRepository.listByRepositoryId(repositoryId);
+  }
+
   async syncByRepositoryId(repositoryId: string): Promise<PullRequest[]> {
     const repository =
       await this.options.repositoryRegistryRepository.findById(repositoryId);

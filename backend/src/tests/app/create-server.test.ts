@@ -16,6 +16,7 @@ import type {
   WorkflowJob,
   WorkflowRun,
 } from '../../modules/workflow-runs/workflow-run.entity.js';
+import type { PullRequest } from '../../modules/pull-request-insights/pull-request.entity.js';
 
 const buildRepository = (
   overrides: Partial<Repository> = {},
@@ -119,11 +120,31 @@ const buildWorkflowJob = (overrides: Partial<WorkflowJob> = {}): WorkflowJob => 
   };
 };
 
+const buildPullRequest = (overrides: Partial<PullRequest> = {}): PullRequest => {
+  const createdAt = new Date('2026-03-31T18:20:00.000Z');
+
+  return {
+    id: 'pr_123',
+    repositoryId: 'repo_123',
+    githubPrId: '987654321',
+    number: 42,
+    title: 'Add pull request insights',
+    state: 'open',
+    author: 'alessandrolsdev',
+    baseBranch: 'main',
+    headBranch: 'feature/pull-request-insights',
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  };
+};
+
 const createProtectedServer = (overrides?: {
   repositories?: Repository[];
   workflows?: Workflow[];
   workflowRuns?: WorkflowRun[];
   workflowJobs?: WorkflowJob[];
+  pullRequests?: PullRequest[];
   createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
   deleteRepositoryById?: (id: string) => Promise<void>;
   installationRepositories?: GitHubInstallationRepository[];
@@ -142,6 +163,7 @@ const createProtectedServer = (overrides?: {
   const workflowStore = [...(overrides?.workflows ?? [])];
   const workflowRunStore: WorkflowRun[] = [...(overrides?.workflowRuns ?? [])];
   const workflowJobStore: WorkflowJob[] = [...(overrides?.workflowJobs ?? [])];
+  const pullRequestStore: PullRequest[] = [...(overrides?.pullRequests ?? [])];
 
   return createServer({
     env: {
@@ -365,6 +387,54 @@ const createProtectedServer = (overrides?: {
         workflowJobStore
           .filter((workflowJob) => workflowJob.workflowRunId === workflowRunId)
           .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+    },
+    pullRequestRepository: {
+      create: async (input) =>
+        buildPullRequest({
+          repositoryId: input.repositoryId,
+          githubPrId: input.githubPrId,
+          number: input.number,
+          title: input.title,
+          state: input.state,
+          author: input.author,
+          baseBranch: input.baseBranch,
+          headBranch: input.headBranch,
+        }),
+      upsert: async (input) => {
+        const existingPullRequestIndex = pullRequestStore.findIndex(
+          (pullRequest) =>
+            pullRequest.repositoryId === input.repositoryId &&
+            pullRequest.githubPrId === input.githubPrId,
+        );
+        const pullRequest = buildPullRequest({
+          id:
+            existingPullRequestIndex >= 0
+              ? pullRequestStore[existingPullRequestIndex]!.id
+              : `pr_${pullRequestStore.length + 1}`,
+          repositoryId: input.repositoryId,
+          githubPrId: input.githubPrId,
+          number: input.number,
+          title: input.title,
+          state: input.state,
+          author: input.author,
+          baseBranch: input.baseBranch,
+          headBranch: input.headBranch,
+        });
+
+        if (existingPullRequestIndex >= 0) {
+          pullRequestStore[existingPullRequestIndex] = pullRequest;
+        } else {
+          pullRequestStore.push(pullRequest);
+        }
+
+        return pullRequest;
+      },
+      listByRepositoryId: async (repositoryId) =>
+        pullRequestStore
+          .filter((pullRequest) => pullRequest.repositoryId === repositoryId)
+          .sort((left, right) => right.number - left.number),
+      findById: async (id) =>
+        pullRequestStore.find((pullRequest) => pullRequest.id === id) ?? null,
     },
   });
 };
@@ -1349,6 +1419,164 @@ describe('createServer', () => {
         code: 'validation_error',
         message: 'String must contain at least 1 character(s)',
       },
+    });
+
+    await server.close();
+  });
+
+  it('should require authentication for pull request listing', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'authentication_required',
+        message: 'Authentication is required.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should reject invalid pull request list route params before service execution', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/%20/pull-requests',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'validation_error',
+        message: 'String must contain at least 1 character(s)',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return not found when the repository does not exist for pull request listing', async () => {
+    const server = createProtectedServer();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_missing/pull-requests',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'repository_not_found',
+        message: 'Repository was not found.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return an empty pull request list for a monitored repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      pullRequests: [],
+    });
+
+    await server.close();
+  });
+
+  it('should return pull requests for an authenticated operator', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [
+        buildPullRequest({
+          id: 'pr_123',
+          githubPrId: '987654321',
+          number: 42,
+          title: 'Add pull request insights',
+          state: 'open',
+          createdAt: new Date('2026-03-31T18:20:00.000Z'),
+          updatedAt: new Date('2026-03-31T18:20:00.000Z'),
+        }),
+        buildPullRequest({
+          id: 'pr_456',
+          githubPrId: '987654322',
+          number: 43,
+          title: 'Close flaky workflow gap',
+          state: 'merged',
+          author: 'codex-bot',
+          baseBranch: 'release',
+          headBranch: 'feature/flaky-workflow-gap',
+          createdAt: new Date('2026-03-31T18:30:00.000Z'),
+          updatedAt: new Date('2026-03-31T18:31:00.000Z'),
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      pullRequests: [
+        {
+          id: 'pr_456',
+          githubPrId: '987654322',
+          number: 43,
+          title: 'Close flaky workflow gap',
+          state: 'merged',
+          author: 'codex-bot',
+          baseBranch: 'release',
+          headBranch: 'feature/flaky-workflow-gap',
+          createdAt: '2026-03-31T18:30:00.000Z',
+          updatedAt: '2026-03-31T18:31:00.000Z',
+        },
+        {
+          id: 'pr_123',
+          githubPrId: '987654321',
+          number: 42,
+          title: 'Add pull request insights',
+          state: 'open',
+          author: 'alessandrolsdev',
+          baseBranch: 'main',
+          headBranch: 'feature/pull-request-insights',
+          createdAt: '2026-03-31T18:20:00.000Z',
+          updatedAt: '2026-03-31T18:20:00.000Z',
+        },
+      ],
     });
 
     await server.close();
