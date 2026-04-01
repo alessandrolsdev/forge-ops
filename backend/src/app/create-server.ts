@@ -124,6 +124,7 @@ export const createServer = (options: CreateServerOptions) => {
     repositoryService,
     workflowService,
     workflowRunService,
+    pullRequestService,
   });
 
   return app;
