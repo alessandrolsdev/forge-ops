@@ -167,6 +167,10 @@ jobs:
           {
             printf '%s\n' "$marker"
             printf '@codex review\n\n'
+            printf 'Responda em portugues do Brasil.\n\n'
+            printf 'Critrios obrigatorios:\n'
+            printf '- idioma: portugues (pt-BR)\n'
+            printf '- foco em arquitetura, riscos e testes\n\n'
             printf 'Solicitacao automatica de revisao Codex para o commit %s.\n\n' "$pr_sha"
             printf 'Esta revisao continua advisory e nao substitui a revisao humana.\n'
           } > "$comment_body_path"
@@ -214,6 +218,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          validate_review_language() {
+            local review_path="$1"
+            local provider_label="$2"
+            local review_text
+            local review_lower
+
+            if [ ! -s "$review_path" ]; then
+              return 1
+            fi
+
+            review_text=$(cat "$review_path")
+            review_lower=$(printf '%s' "$review_text" | tr '[:upper:]' '[:lower:]')
+
+            if printf '%s' "$review_lower" | grep -qiE '\b(the|and|with|this|that|from|for|are|should|could|would|issue|file|tests)\b'; then
+              echo "${provider_label} review language validation flagged probable English content."
+              return 1
+            fi
+
+            if ! printf '%s' "$review_lower" | grep -qiE '\b(revisao|risco|arquivo|correcao|teste|achados|materiais|residual|repositorio|arquitetura|seguranca)\b|[áéíóúãõç]'; then
+              echo "${provider_label} review language validation did not detect enough PT-BR signals."
+              return 1
+            fi
+
+            return 0
+          }
 
           request_path="$RUNNER_TEMP/codex-review/openai-request.json"
           response_path="$RUNNER_TEMP/codex-review/openai-response.json"
@@ -327,6 +357,13 @@ jobs:
             exit 0
           fi
 
+          if ! validate_review_language "$review_path" "OpenAI"; then
+            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
+            echo "provider=openai" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A OpenAI API respondeu em idioma diferente do portugues do Brasil." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "status=completed" >> "$GITHUB_OUTPUT"
           echo "provider=openai" >> "$GITHUB_OUTPUT"
           echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
@@ -341,6 +378,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          validate_review_language() {
+            local review_path="$1"
+            local provider_label="$2"
+            local review_text
+            local review_lower
+
+            if [ ! -s "$review_path" ]; then
+              return 1
+            fi
+
+            review_text=$(cat "$review_path")
+            review_lower=$(printf '%s' "$review_text" | tr '[:upper:]' '[:lower:]')
+
+            if printf '%s' "$review_lower" | grep -qiE '\b(the|and|with|this|that|from|for|are|should|could|would|issue|file|tests)\b'; then
+              echo "${provider_label} review language validation flagged probable English content."
+              return 1
+            fi
+
+            if ! printf '%s' "$review_lower" | grep -qiE '\b(revisao|risco|arquivo|correcao|teste|achados|materiais|residual|repositorio|arquitetura|seguranca)\b|[áéíóúãõç]'; then
+              echo "${provider_label} review language validation did not detect enough PT-BR signals."
+              return 1
+            fi
+
+            return 0
+          }
 
           request_path="$RUNNER_TEMP/codex-review/openrouter-request.json"
           response_path="$RUNNER_TEMP/codex-review/openrouter-response.json"
@@ -470,6 +533,13 @@ jobs:
               ' "$response_path"
             )
             echo "fallback_reason=$fallback_reason" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! validate_review_language "$review_path" "OpenRouter"; then
+            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
+            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A OpenRouter API respondeu em idioma diferente do portugues do Brasil." >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
