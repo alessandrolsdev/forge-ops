@@ -1,0 +1,129 @@
+name: Codex Review Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/**
+      - chore/**
+      - fix/**
+    paths:
+      - .github/workflows/codex-review.yml
+      - .github/workflows/codex-review-smoke.yml
+      - .github/prompts/codex-review.md
+      - .github/prompts/codex-fallback.md
+      - .github/prompts/codex-readiness.md
+      - .github/scripts/codex-review-smoke.sh
+
+permissions:
+  contents: read
+
+jobs:
+  codex-review-smoke:
+    name: codex-review-smoke (${{ matrix.scenario }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: pat_invalid
+            fork_pr: "false"
+            review_enabled: "true"
+            pat_available: "false"
+            openai_present: "true"
+            openai_result: "completed"
+            openrouter_present: "true"
+            openrouter_result: "completed"
+            expected_final_comment: "true"
+            expected_comment_publisher: "github_token"
+            expected_review_provider: "openai"
+            expected_review_status: "completed"
+          - scenario: openai_unavailable
+            fork_pr: "false"
+            review_enabled: "true"
+            pat_available: "true"
+            openai_present: "true"
+            openai_result: "failed"
+            openrouter_present: "true"
+            openrouter_result: "completed"
+            expected_final_comment: "true"
+            expected_comment_publisher: "maintainer_pat"
+            expected_review_provider: "openrouter"
+            expected_review_status: "completed"
+          - scenario: openrouter_unavailable
+            fork_pr: "false"
+            review_enabled: "true"
+            pat_available: "true"
+            openai_present: "true"
+            openai_result: "failed"
+            openrouter_present: "false"
+            openrouter_result: "failed"
+            expected_final_comment: "true"
+            expected_comment_publisher: "maintainer_pat"
+            expected_review_provider: "none"
+            expected_review_status: "fallback_human"
+          - scenario: fork_pr
+            fork_pr: "true"
+            review_enabled: "true"
+            pat_available: "true"
+            openai_present: "true"
+            openai_result: "completed"
+            openrouter_present: "true"
+            openrouter_result: "completed"
+            expected_final_comment: "false"
+            expected_comment_publisher: "none"
+            expected_review_provider: "none"
+            expected_review_status: "skipped"
+          - scenario: happy_path
+            fork_pr: "false"
+            review_enabled: "true"
+            pat_available: "true"
+            openai_present: "true"
+            openai_result: "completed"
+            openrouter_present: "true"
+            openrouter_result: "completed"
+            expected_final_comment: "true"
+            expected_comment_publisher: "maintainer_pat"
+            expected_review_provider: "openai"
+            expected_review_status: "completed"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run codex-review smoke scenario
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          FORK_PR: ${{ matrix.fork_pr }}
+          CODEX_REVIEW_ENABLED: ${{ matrix.review_enabled }}
+          PAT_AVAILABLE: ${{ matrix.pat_available }}
+          OPENAI_PRESENT: ${{ matrix.openai_present }}
+          OPENAI_RESULT: ${{ matrix.openai_result }}
+          OPENROUTER_PRESENT: ${{ matrix.openrouter_present }}
+          OPENROUTER_RESULT: ${{ matrix.openrouter_result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/.github/scripts/codex-review-smoke.sh" | tee "$RUNNER_TEMP/codex-review-smoke.log"
+
+      - name: Assert expected smoke path
+        env:
+          EXPECTED_FINAL_COMMENT: ${{ matrix.expected_final_comment }}
+          EXPECTED_COMMENT_PUBLISHER: ${{ matrix.expected_comment_publisher }}
+          EXPECTED_REVIEW_PROVIDER: ${{ matrix.expected_review_provider }}
+          EXPECTED_REVIEW_STATUS: ${{ matrix.expected_review_status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log_path="$RUNNER_TEMP/codex-review-smoke.log"
+
+          grep -q "^FINAL_COMMENT=${EXPECTED_FINAL_COMMENT}$" "$log_path"
+          grep -q "^COMMENT_PUBLISHER=${EXPECTED_COMMENT_PUBLISHER}$" "$log_path"
+          grep -q "^REVIEW_PROVIDER=${EXPECTED_REVIEW_PROVIDER}$" "$log_path"
+          grep -q "^REVIEW_STATUS=${EXPECTED_REVIEW_STATUS}$" "$log_path"
