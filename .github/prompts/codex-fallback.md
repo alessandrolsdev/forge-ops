@@ -1,5 +1,7 @@
-Codex review automation tentou executar a revisão automática, mas não produziu um resultado utilizável.
+Codex review automation tentou executar a revisao automatica, mas nao produziu um resultado utilizavel.
 
-Nenhuma revisão automática foi publicada para o commit {{sha}}.
+Motivo observado: {{reason}}
 
-Revisão humana continua obrigatória.
+Nenhuma revisao automatica foi publicada para o commit {{sha}}.
+
+Revisao humana continua obrigatoria.

@@ -28,7 +28,11 @@
 - Treat Codex review as advisory until the repository owner validates the signal quality and GitHub connector readiness.
 - Gate automatic `@codex review` requests behind repository variable `CODEX_REVIEW_ENABLED=true`.
 - Enable `CODEX_REVIEW_ENABLED` only after confirming that the maintainer account used for PR review is connected to GitHub in Codex and a manual `@codex review` produces an actual review.
+- Publish the `@codex review` trigger comment with a dedicated maintainer PAT (`CODEX_REVIEW_PAT`) instead of `github-actions[bot]`.
+- Keep `CODEX_REVIEW_PAT` scoped with the minimum repository permissions needed to read pull requests and write issue comments.
 - If Codex is not enabled or not connected yet, the workflow must post a fallback comment that makes the lack of automatic review explicit and reminds reviewers that human review remains mandatory.
+- If Codex review runs but still cannot publish a usable output, the fallback comment must state the observed reason instead of using a generic message.
+- Keep OpenRouter as the secondary provider behind `OPENROUTER_API_KEY` plus `CODEX_REVIEW_OPENROUTER_MODEL`, so provider fallback can be adjusted without editing the workflow.
 - Keep the workflow text structure versioned under `.github/prompts/` so prompt, readiness, fallback, and marker changes are reviewable outside the YAML orchestration.
 - The automated Codex review prompt should require the response in Portuguese (Brazil).
 - The Codex review request should focus on:
