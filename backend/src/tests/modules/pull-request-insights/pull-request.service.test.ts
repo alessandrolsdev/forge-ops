@@ -70,6 +70,103 @@ const buildRemotePullRequest = (
 };
 
 describe('PullRequestService', () => {
+  it('should list pull requests for a monitored repository', async () => {
+    const findById = vi.fn().mockResolvedValue(buildRepository());
+    const listByRepositoryId = vi.fn().mockResolvedValue([
+      buildPullRequest({
+        id: 'pr_456',
+        githubPrId: '987654322',
+        number: 43,
+        title: 'Close flaky workflow gap',
+        state: 'merged',
+      }),
+      buildPullRequest(),
+    ]);
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById,
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId,
+        findById: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+      },
+    });
+
+    await expect(service.listByRepositoryId('repo_123')).resolves.toEqual([
+      buildPullRequest({
+        id: 'pr_456',
+        githubPrId: '987654322',
+        number: 43,
+        title: 'Close flaky workflow gap',
+        state: 'merged',
+      }),
+      buildPullRequest(),
+    ]);
+
+    expect(findById).toHaveBeenCalledWith('repo_123');
+    expect(listByRepositoryId).toHaveBeenCalledWith('repo_123');
+  });
+
+  it('should return an empty list when the repository has no persisted pull requests', async () => {
+    const listByRepositoryId = vi.fn().mockResolvedValue([]);
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId,
+        findById: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+      },
+    });
+
+    await expect(service.listByRepositoryId('repo_123')).resolves.toEqual([]);
+    expect(listByRepositoryId).toHaveBeenCalledWith('repo_123');
+  });
+
   it('should sync pull requests for a monitored repository', async () => {
     const findById = vi.fn().mockResolvedValue(buildRepository());
     const listPullRequests = vi.fn().mockResolvedValue([
@@ -237,7 +334,7 @@ describe('PullRequestService', () => {
       },
     });
 
-    await expect(service.syncByRepositoryId('repo_missing')).rejects.toBeInstanceOf(
+    await expect(service.listByRepositoryId('repo_missing')).rejects.toBeInstanceOf(
       RepositoryNotFoundError,
     );
   });

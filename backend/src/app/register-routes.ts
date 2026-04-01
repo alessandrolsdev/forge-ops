@@ -14,12 +14,15 @@ import { registerWorkflowCatalogRoutes } from '../modules/workflow-catalog/workf
 import type { WorkflowService } from '../modules/workflow-catalog/workflow.service.js';
 import { registerWorkflowRunRoutes } from '../modules/workflow-runs/workflow-run.controller.js';
 import type { WorkflowRunService } from '../modules/workflow-runs/workflow-run.service.js';
+import { registerPullRequestRoutes } from '../modules/pull-request-insights/pull-request.controller.js';
+import type { PullRequestService } from '../modules/pull-request-insights/pull-request.service.js';
 
 interface RegisterRoutesOptions {
   healthService: HealthService;
   repositoryService: RepositoryService;
   workflowService: WorkflowService;
   workflowRunService: WorkflowRunService;
+  pullRequestService: PullRequestService;
 }
 
 export type ForgeOpsFastifyInstance = FastifyInstance<
@@ -38,4 +41,5 @@ export const registerRoutes = (
   registerRepositoryRegistryRoutes(app, options.repositoryService);
   registerWorkflowCatalogRoutes(app, options.workflowService);
   registerWorkflowRunRoutes(app, options.workflowRunService);
+  registerPullRequestRoutes(app, options.pullRequestService);
 };
