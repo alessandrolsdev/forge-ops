@@ -372,6 +372,10 @@ jobs:
               ]
             }' > "$request_path"
 
+          echo "OpenRouter model: $OPENROUTER_MODEL"
+          echo "OpenRouter prompt size (bytes): $(wc -c < "$prompt_path")"
+          echo "OpenRouter PR diff size (bytes): $(wc -c < "$diff_path")"
+
           set +e
           http_status=$(
             curl -sS \
@@ -401,6 +405,19 @@ jobs:
             exit 0
           fi
 
+          echo "OpenRouter API raw response:"
+          cat "$response_path"
+          echo
+          echo "OpenRouter API response summary:"
+          jq '{
+            id,
+            model,
+            choices_count: ([.choices[]?] | length),
+            first_choice_finish_reason: .choices[0]?.finish_reason,
+            first_choice_role: .choices[0]?.message?.role,
+            first_choice_content_type: (.choices[0]?.message?.content | type)
+          }' "$response_path"
+
           jq -r '
             def text_value:
               if . == null then
@@ -414,7 +431,13 @@ jobs:
               end;
 
             [
+              (.choices[0]?.message?.content | text_value),
               (.choices[]?.message?.content | text_value),
+              (
+                .choices[0]?.message?.content[]?
+                | select((.type // "") == "text")
+                | (.text // empty)
+              ),
               (
                 .choices[]?.message?.content[]?
                 | select((.type // "") == "text")
@@ -426,10 +449,27 @@ jobs:
             | join("\n\n")
           ' "$response_path" > "$review_path"
 
+          echo "OpenRouter parsed review size (bytes): $(wc -c < "$review_path")"
+
           if [ ! -s "$review_path" ] || [ "$(cat "$review_path")" = "null" ]; then
             echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
             echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A OpenRouter API respondeu, mas nao gerou texto publicavel no formato esperado." >> "$GITHUB_OUTPUT"
+            fallback_reason=$(
+              jq -r '
+                if (.error? != null) then
+                  "A OpenRouter API retornou um objeto de erro no payload."
+                elif ([.choices[]?] | length) == 0 then
+                  "A OpenRouter API respondeu sem `choices`."
+                elif (.choices[0]?.message? == null) then
+                  "A OpenRouter API respondeu sem `message` na primeira choice."
+                elif (.choices[0]?.message?.content == null) then
+                  "A OpenRouter API respondeu sem `message.content` na primeira choice."
+                else
+                  "A OpenRouter API respondeu, mas nao gerou texto publicavel no formato esperado."
+                end
+              ' "$response_path"
+            )
+            echo "fallback_reason=$fallback_reason" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
