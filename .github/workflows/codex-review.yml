@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   pull-requests: read
 
 concurrency:
@@ -45,7 +46,7 @@ jobs:
           CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_MODEL: ${{ vars.CODEX_REVIEW_OPENROUTER_MODEL }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || vars.CODEX_REVIEW_OPENROUTER_MODEL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -83,15 +84,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          login=$(
-            curl -fsSL https://api.github.com/user \
-              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+          response_path="$RUNNER_TEMP/codex-review/commenter.json"
+          http_status=$(
+            curl -s \
+              -o "$response_path" \
+              -w "%{http_code}" \
+              -H "Authorization: token ${CODEX_REVIEW_PAT}" \
               -H "Accept: application/vnd.github+json" \
-              | jq -r '.login // empty'
+              https://api.github.com/user \
+              || true
           )
+
+          if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
+            login=$(jq -r '.login // empty' "$response_path" 2>/dev/null || true)
+          else
+            login=""
+          fi
 
           if [ -z "$login" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "login=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -169,17 +181,29 @@ jobs:
             printf '@codex review\n\n'
             printf 'Responda em portugues do Brasil.\n\n'
             printf 'Critrios obrigatorios:\n'
-            printf '- idioma: portugues (pt-BR)\n'
-            printf '- foco em arquitetura, riscos e testes\n\n'
+            printf '%s\n' '- idioma: portugues (pt-BR)'
+            printf '%s\n\n' '- foco em arquitetura, riscos e testes'
             printf 'Solicitacao automatica de revisao Codex para o commit %s.\n\n' "$pr_sha"
             printf 'Esta revisao continua advisory e nao substitui a revisao humana.\n'
           } > "$comment_body_path"
 
-          existing_comment_id=$(
-            curl -fsSL \
+          set +e
+          comments_payload=$(
+            curl -s \
               -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
               -H "Accept: application/vnd.github+json" \
               "$comments_url?per_page=100" \
+          )
+          comments_status=$?
+          set -e
+
+          if [ "$comments_status" -ne 0 ]; then
+            echo "Skipping maintainer trigger comment update because GitHub comment listing failed."
+            exit 0
+          fi
+
+          existing_comment_id=$(
+            printf '%s' "$comments_payload" \
               | jq -r --arg login "$COMMENTER_LOGIN" --arg marker "$marker" '
                   .[]
                   | select(.user.login == $login and ((.body // "") | contains($marker)))
@@ -189,25 +213,37 @@ jobs:
           )
 
           if [ -n "$existing_comment_id" ]; then
+            set +e
             jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-              | curl -fsSL -X PATCH \
+              | curl -s -X PATCH \
                   "${{ github.api_url }}/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
                   -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
                   -H "Accept: application/vnd.github+json" \
                   -H "Content-Type: application/json" \
                   --data @- \
                   > /dev/null
+            patch_status=$?
+            set -e
+            if [ "$patch_status" -ne 0 ]; then
+              echo "Skipping maintainer trigger comment patch because GitHub patch request failed."
+            fi
             exit 0
           fi
 
+          set +e
           jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-            | curl -fsSL -X POST \
+            | curl -s -X POST \
                 "$comments_url" \
                 -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
                 -H "Accept: application/vnd.github+json" \
                 -H "Content-Type: application/json" \
                 --data @- \
                 > /dev/null
+          post_status=$?
+          set -e
+          if [ "$post_status" -ne 0 ]; then
+            echo "Skipping maintainer trigger comment creation because GitHub post request failed."
+          fi
 
       - name: Run automated review via OpenAI API
         id: openai-review
@@ -373,7 +409,7 @@ jobs:
         if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.review-config.outputs.openrouter_present == 'true' && steps.openai-review.outputs.status != 'completed' }}
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_MODEL: ${{ vars.CODEX_REVIEW_OPENROUTER_MODEL }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || vars.CODEX_REVIEW_OPENROUTER_MODEL }}
           PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
         shell: bash
         run: |
@@ -591,6 +627,8 @@ jobs:
         env:
           CODEX_REVIEW_ENABLED: ${{ steps.review-config.outputs.enabled }}
           CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
+          GITHUB_TOKEN: ${{ github.token }}
+          COMMENTER_AVAILABLE: ${{ steps.commenter.outputs.available }}
           COMMENTER_LOGIN: ${{ steps.commenter.outputs.login }}
           OPENAI_PRESENT: ${{ steps.review-config.outputs.openai_present }}
           OPENROUTER_PRESENT: ${{ steps.review-config.outputs.openrouter_present }}
@@ -611,6 +649,14 @@ jobs:
           comments_url="${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments"
           comment_body_path="$RUNNER_TEMP/codex-review/final-comment.md"
 
+          if [ "${COMMENTER_AVAILABLE:-false}" = "true" ] && [ -n "${CODEX_REVIEW_PAT:-}" ]; then
+            auth_token="$CODEX_REVIEW_PAT"
+            expected_login="$COMMENTER_LOGIN"
+          else
+            auth_token="$GITHUB_TOKEN"
+            expected_login="github-actions[bot]"
+          fi
+
           render_template() {
             local template_path="$1"
             local rendered
@@ -630,7 +676,7 @@ jobs:
               printf '%s\n' "$marker"
               printf '@codex review\n\n'
               printf 'Codex review automation esta habilitada, mas nenhum provider automatizado esta configurado para este repositorio.\n\n'
-              printf 'Configure `OPENAI_API_KEY` ou o par `OPENROUTER_API_KEY` + `CODEX_REVIEW_OPENROUTER_MODEL`.\n\n'
+              printf 'Configure `OPENAI_API_KEY` ou o par `OPENROUTER_API_KEY` + `OPENROUTER_MODEL`.\n\n'
               printf 'Revisao humana continua obrigatoria.\n'
             } > "$comment_body_path"
           elif [ "$REVIEW_STATUS" = "completed" ] && [ -n "$REVIEW_PATH" ] && [ -f "$REVIEW_PATH" ]; then
@@ -650,12 +696,24 @@ jobs:
             } > "$comment_body_path"
           fi
 
-          existing_comment_id=$(
-            curl -fsSL \
-              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+          set +e
+          comments_payload=$(
+            curl -s \
+              -H "Authorization: Bearer $auth_token" \
               -H "Accept: application/vnd.github+json" \
-              "$comments_url?per_page=100" \
-              | jq -r --arg login "$COMMENTER_LOGIN" --arg marker "$marker" '
+              "$comments_url?per_page=100"
+          )
+          comments_status=$?
+          set -e
+
+          if [ "$comments_status" -ne 0 ]; then
+            echo "Unable to list pull request comments for final status publication."
+            exit 0
+          fi
+
+          existing_comment_id=$(
+            printf '%s' "$comments_payload" \
+              | jq -r --arg login "$expected_login" --arg marker "$marker" '
                   .[]
                   | select(.user.login == $login and ((.body // "") | contains($marker)))
                   | .id
@@ -664,22 +722,34 @@ jobs:
           )
 
           if [ -n "$existing_comment_id" ]; then
+            set +e
             jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-              | curl -fsSL -X PATCH \
+              | curl -s -X PATCH \
                   "${{ github.api_url }}/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
-                  -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                  -H "Authorization: Bearer $auth_token" \
                   -H "Accept: application/vnd.github+json" \
                   -H "Content-Type: application/json" \
                   --data @- \
                   > /dev/null
+            patch_status=$?
+            set -e
+            if [ "$patch_status" -ne 0 ]; then
+              echo "Unable to patch final status comment."
+            fi
             exit 0
           fi
 
+          set +e
           jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-            | curl -fsSL -X POST \
+            | curl -s -X POST \
                 "$comments_url" \
-                -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                -H "Authorization: Bearer $auth_token" \
                 -H "Accept: application/vnd.github+json" \
                 -H "Content-Type: application/json" \
                 --data @- \
                 > /dev/null
+          post_status=$?
+          set -e
+          if [ "$post_status" -ne 0 ]; then
+            echo "Unable to create final status comment."
+          fi
