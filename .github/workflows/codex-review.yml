@@ -12,8 +12,7 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
+  pull-requests: read
 
 concurrency:
   group: codex-review-${{ github.event.pull_request.number }}
@@ -38,68 +37,177 @@ jobs:
         run: |
           echo "Codex review is skipped for fork pull requests to avoid exposing review automation to untrusted contexts."
 
-      - name: Check OpenAI API key availability
-        id: openai-key
-        if: ${{ !github.event.pull_request.head.repo.fork && vars.CODEX_REVIEW_ENABLED == 'true' }}
+      - name: Check review configuration
+        id: review-config
+        if: ${{ !github.event.pull_request.head.repo.fork }}
         env:
+          CODEX_REVIEW_ENABLED: ${{ vars.CODEX_REVIEW_ENABLED }}
+          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.CODEX_REVIEW_OPENROUTER_MODEL }}
+        shell: bash
         run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "present=false" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          if [ "${CODEX_REVIEW_ENABLED:-false}" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "${CODEX_REVIEW_PAT:-}" ]; then
+            echo "pat_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pat_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "${OPENAI_API_KEY:-}" ]; then
+            echo "openai_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "openai_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "${OPENROUTER_API_KEY:-}" ] && [ -n "${OPENROUTER_MODEL:-}" ]; then
+            echo "openrouter_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "openrouter_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve commenter identity
+        id: commenter
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.pat_present == 'true' }}
+        env:
+          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          login=$(
+            curl -fsSL https://api.github.com/user \
+              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+              -H "Accept: application/vnd.github+json" \
+              | jq -r '.login // empty'
+          )
+
+          if [ -z "$login" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "present=true" >> "$GITHUB_OUTPUT"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "login=$login" >> "$GITHUB_OUTPUT"
 
       - name: Collect pull request context
         id: pr-context
-        if: ${{ !github.event.pull_request.head.repo.fork && vars.CODEX_REVIEW_ENABLED == 'true' && steps.openai-key.outputs.present == 'true' }}
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const outputDir = path.join(process.env.RUNNER_TEMP, 'codex-review');
-            const maxDiffCharacters = 200000;
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            fs.mkdirSync(outputDir, { recursive: true });
+          output_dir="$RUNNER_TEMP/codex-review"
+          pr_json_path="$output_dir/pr.json"
+          pr_diff_path="$output_dir/pr.diff"
+          pr_number=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+          pr_title=$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH")
+          pr_body=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
+          pr_sha=$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")
+          max_diff_characters=200000
+          api_url="${{ github.api_url }}/repos/${{ github.repository }}/pulls/$pr_number"
 
-            const pr = context.payload.pull_request;
-            const diffResponse = await github.request({
-              method: 'GET',
-              url: `/repos/${context.repo.owner}/${context.repo.repo}/pulls/${pr.number}`,
-              headers: {
-                accept: 'application/vnd.github.v3.diff',
-              },
-            });
+          mkdir -p "$output_dir"
 
-            const rawDiff =
-              typeof diffResponse.data === 'string'
-                ? diffResponse.data
-                : String(diffResponse.data);
-            const diff =
-              rawDiff.length > maxDiffCharacters
-                ? `${rawDiff.slice(0, maxDiffCharacters)}\n\n[diff truncated after ${maxDiffCharacters} characters]`
-                : rawDiff;
+          raw_diff=$(
+            curl -fsSL \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3.diff" \
+              "$api_url"
+          )
 
-            fs.writeFileSync(
-              path.join(outputDir, 'pr.json'),
-              JSON.stringify(
-                {
-                  title: pr.title ?? '',
-                  body: pr.body ?? '',
-                },
-                null,
-                2,
-              ),
-            );
-            fs.writeFileSync(path.join(outputDir, 'pr.diff'), diff);
+          if [ "${#raw_diff}" -gt "$max_diff_characters" ]; then
+            diff="${raw_diff:0:$max_diff_characters}"$'\n\n'"[diff truncated after ${max_diff_characters} characters]"
+          else
+            diff="$raw_diff"
+          fi
 
-            core.setOutput('context_dir', outputDir);
+          jq -n \
+            --arg title "$pr_title" \
+            --arg body "$pr_body" \
+            --arg sha "$pr_sha" \
+            --argjson number "$pr_number" \
+            '{
+              title: $title,
+              body: $body,
+              sha: $sha,
+              number: $number
+            }' > "$pr_json_path"
 
-      - name: Run Codex review via OpenAI API
+          printf '%s' "$diff" > "$pr_diff_path"
+
+          echo "context_dir=$output_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Codex trigger comment as maintainer
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.commenter.outputs.available == 'true' }}
+        env:
+          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
+          COMMENTER_LOGIN: ${{ steps.commenter.outputs.login }}
+          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          marker=$(cat "$GITHUB_WORKSPACE/.github/prompts/codex-comment-marker.txt")
+          pr_number=$(jq -r '.number' "$PR_CONTEXT_DIR/pr.json")
+          pr_sha=$(jq -r '.sha' "$PR_CONTEXT_DIR/pr.json")
+          comments_url="${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments"
+          comment_body_path="$RUNNER_TEMP/codex-review/trigger-comment.md"
+
+          {
+            printf '%s\n' "$marker"
+            printf '@codex review\n\n'
+            printf 'Solicitacao automatica de revisao Codex para o commit %s.\n\n' "$pr_sha"
+            printf 'Esta revisao continua advisory e nao substitui a revisao humana.\n'
+          } > "$comment_body_path"
+
+          existing_comment_id=$(
+            curl -fsSL \
+              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+              -H "Accept: application/vnd.github+json" \
+              "$comments_url?per_page=100" \
+              | jq -r --arg login "$COMMENTER_LOGIN" --arg marker "$marker" '
+                  .[]
+                  | select(.user.login == $login and ((.body // "") | contains($marker)))
+                  | .id
+                ' \
+              | head -n 1
+          )
+
+          if [ -n "$existing_comment_id" ]; then
+            jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+              | curl -fsSL -X PATCH \
+                  "${{ github.api_url }}/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
+                  -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "Content-Type: application/json" \
+                  --data @- \
+                  > /dev/null
+            exit 0
+          fi
+
+          jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+            | curl -fsSL -X POST \
+                "$comments_url" \
+                -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                -H "Accept: application/vnd.github+json" \
+                -H "Content-Type: application/json" \
+                --data @- \
+                > /dev/null
+
+      - name: Run automated review via OpenAI API
         id: openai-review
-        if: ${{ !github.event.pull_request.head.repo.fork && vars.CODEX_REVIEW_ENABLED == 'true' && steps.openai-key.outputs.present == 'true' }}
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.review-config.outputs.openai_present == 'true' }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
@@ -107,14 +215,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          request_path="$RUNNER_TEMP/codex-review/request.json"
-          response_path="$RUNNER_TEMP/codex-review/response.json"
-          review_path="$RUNNER_TEMP/codex-review/review.md"
+          request_path="$RUNNER_TEMP/codex-review/openai-request.json"
+          response_path="$RUNNER_TEMP/codex-review/openai-response.json"
+          review_path="$RUNNER_TEMP/codex-review/openai-review.md"
           prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
           diff_path="$PR_CONTEXT_DIR/pr.diff"
-
-          echo "Prompt size (bytes): $(wc -c < "$prompt_path")"
-          echo "PR diff size (bytes): $(wc -c < "$diff_path")"
 
           jq -n \
             --rawfile prompt "$prompt_path" \
@@ -148,42 +253,67 @@ jobs:
             }' > "$request_path"
 
           set +e
-          http_status=$(curl -sS \
-            -o "$response_path" \
-            -w "%{http_code}" \
-            https://api.openai.com/v1/responses \
-            -H "Authorization: Bearer $OPENAI_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data @"$request_path")
+          http_status=$(
+            curl -sS \
+              -o "$response_path" \
+              -w "%{http_code}" \
+              https://api.openai.com/v1/responses \
+              -H "Authorization: Bearer $OPENAI_API_KEY" \
+              -H "Content-Type: application/json" \
+              --data @"$request_path"
+          )
           curl_exit=$?
           set -e
 
           if [ "$curl_exit" -ne 0 ]; then
             echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "provider=openai" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A chamada para a OpenAI API falhou antes de retornar um payload." >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
             echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "provider=openai" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A OpenAI API respondeu com status HTTP $http_status." >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "OpenAI API raw response:"
-          cat "$response_path"
-
           jq -r '
-            def output_text:
-              if type == "string" then
+            def text_value:
+              if . == null then
+                empty
+              elif type == "string" then
                 .
               elif type == "object" then
-                .value // empty
+                .text // .value // empty
               else
                 empty
               end;
 
             [
-              .output[0]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text | output_text,
-              .output[]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text | output_text
+              (.output_text? | strings),
+              (
+                .output[]?
+                | select(.type == "message")
+                | .content[]?
+                | select((.type // "") == "output_text" or (.type // "") == "text")
+                | .text
+                | text_value
+              ),
+              (
+                .output[]?
+                | .content[]?
+                | select((.type // "") == "output_text" or (.type // "") == "text")
+                | .text
+                | text_value
+              ),
+              (
+                .content[]?
+                | select((.type // "") == "output_text" or (.type // "") == "text")
+                | .text
+                | text_value
+              )
             ]
             | map(select(length > 0))
             | unique
@@ -191,101 +321,255 @@ jobs:
           ' "$response_path" > "$review_path"
 
           if [ ! -s "$review_path" ] || [ "$(cat "$review_path")" = "null" ]; then
-            echo "OpenAI review parsing produced no usable text output."
-            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
+            echo "provider=openai" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A OpenAI API respondeu, mas nao gerou texto publicavel no formato esperado." >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "status=completed" >> "$GITHUB_OUTPUT"
+          echo "provider=openai" >> "$GITHUB_OUTPUT"
           echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
 
-      - name: Publish Codex review status
-        if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: actions/github-script@v8
+      - name: Run automated review via OpenRouter fallback
+        id: openrouter-review
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.review-config.outputs.openrouter_present == 'true' && steps.openai-review.outputs.status != 'completed' }}
         env:
-          CODEX_REVIEW_ENABLED: ${{ vars.CODEX_REVIEW_ENABLED }}
-          OPENAI_API_KEY_PRESENT: ${{ steps.openai-key.outputs.present }}
-          OPENAI_REVIEW_STATUS: ${{ steps.openai-review.outputs.status }}
-          OPENAI_REVIEW_PATH: ${{ steps.openai-review.outputs.review_path }}
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const codexReviewEnabled = process.env.CODEX_REVIEW_ENABLED === 'true';
-            const openAiKeyPresent = process.env.OPENAI_API_KEY_PRESENT === 'true';
-            const openAiReviewStatus = process.env.OPENAI_REVIEW_STATUS;
-            const reviewPath = process.env.OPENAI_REVIEW_PATH;
-            const workspace = process.env.GITHUB_WORKSPACE;
-            const marker = fs
-              .readFileSync(path.join(workspace, '.github/prompts/codex-comment-marker.txt'), 'utf8')
-              .trim();
-            const readinessTemplate = fs.readFileSync(
-              path.join(workspace, '.github/prompts/codex-readiness.md'),
-              'utf8',
-            );
-            const fallbackTemplate = fs.readFileSync(
-              path.join(workspace, '.github/prompts/codex-fallback.md'),
-              'utf8',
-            );
-            const renderTemplate = (template) =>
-              template.replaceAll('{{sha}}', context.payload.pull_request.head.sha);
-            let body;
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.CODEX_REVIEW_OPENROUTER_MODEL }}
+          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            if (!codexReviewEnabled) {
-              body = [
-                marker,
-                renderTemplate(readinessTemplate),
-              ].join('\n');
-            } else if (!openAiKeyPresent) {
-              body = [
-                marker,
-                'Codex review automation está habilitada, mas `OPENAI_API_KEY` não está configurada para este repositório.',
-                '',
-                `Nenhuma revisão automática do Codex foi solicitada para o commit ${context.payload.pull_request.head.sha}.`,
-                '',
-                'Revisão humana continua obrigatória até que o secret seja configurado.',
-              ].join('\n');
-            } else if (openAiReviewStatus === 'completed' && reviewPath && fs.existsSync(reviewPath)) {
-              const reviewText = fs.readFileSync(reviewPath, 'utf8').trim();
-              body = [
-                marker,
-                `Revisão Codex concluída automaticamente via OpenAI API para o commit ${context.payload.pull_request.head.sha}.`,
-                '',
-                reviewText,
-                '',
-                'Esta revisão é advisory e não substitui a revisão humana.',
-              ].join('\n');
-            } else {
-              body = [
-                marker,
-                renderTemplate(fallbackTemplate),
-              ].join('\n');
-            }
+          request_path="$RUNNER_TEMP/codex-review/openrouter-request.json"
+          response_path="$RUNNER_TEMP/codex-review/openrouter-response.json"
+          review_path="$RUNNER_TEMP/codex-review/openrouter-review.md"
+          prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
+          diff_path="$PR_CONTEXT_DIR/pr.diff"
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              per_page: 100,
-            });
+          jq -n \
+            --arg model "$OPENROUTER_MODEL" \
+            --rawfile prompt "$prompt_path" \
+            --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
+            --rawfile diff "$diff_path" \
+            '{
+              model: $model,
+              temperature: 0.1,
+              messages: [
+                {
+                  role: "system",
+                  content: $prompt
+                },
+                {
+                  role: "user",
+                  content: (
+                    "PR title:\n" + ($pr[0].title // "(empty)") +
+                    "\n\nPR body:\n" + ($pr[0].body // "(empty)") +
+                    "\n\nUnified diff:\n" + $diff
+                  )
+                }
+              ]
+            }' > "$request_path"
 
-            const existingComment = comments.find((comment) =>
-              comment.user?.type === 'Bot' && comment.body?.includes(marker),
-            );
+          set +e
+          http_status=$(
+            curl -sS \
+              -o "$response_path" \
+              -w "%{http_code}" \
+              https://openrouter.ai/api/v1/chat/completions \
+              -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+              -H "Content-Type: application/json" \
+              -H "HTTP-Referer: https://github.com/${{ github.repository }}" \
+              -H "X-Title: ForgeOps Codex Review" \
+              --data @"$request_path"
+          )
+          curl_exit=$?
+          set -e
 
-            if (existingComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existingComment.id,
-                body,
-              });
-              return;
-            }
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A chamada para a OpenRouter API falhou antes de retornar um payload." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body,
-            });
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A OpenRouter API respondeu com status HTTP $http_status." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          jq -r '
+            def text_value:
+              if . == null then
+                empty
+              elif type == "string" then
+                .
+              elif type == "object" then
+                .text // empty
+              else
+                empty
+              end;
+
+            [
+              (.choices[]?.message?.content | text_value),
+              (
+                .choices[]?.message?.content[]?
+                | select((.type // "") == "text")
+                | (.text // empty)
+              )
+            ]
+            | map(select(length > 0))
+            | unique
+            | join("\n\n")
+          ' "$response_path" > "$review_path"
+
+          if [ ! -s "$review_path" ] || [ "$(cat "$review_path")" = "null" ]; then
+            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
+            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=A OpenRouter API respondeu, mas nao gerou texto publicavel no formato esperado." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "status=completed" >> "$GITHUB_OUTPUT"
+          echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+          echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve review result
+        id: review-result
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.openai-review.outputs.status }}" = "completed" ]; then
+            echo "status=completed" >> "$GITHUB_OUTPUT"
+            echo "provider=${{ steps.openai-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
+            echo "review_path=${{ steps.openai-review.outputs.review_path }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ steps.openrouter-review.outputs.status }}" = "completed" ]; then
+            echo "status=completed" >> "$GITHUB_OUTPUT"
+            echo "provider=${{ steps.openrouter-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
+            echo "review_path=${{ steps.openrouter-review.outputs.review_path }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${{ steps.openrouter-review.outputs.status }}" ]; then
+            echo "status=${{ steps.openrouter-review.outputs.status }}" >> "$GITHUB_OUTPUT"
+            echo "provider=${{ steps.openrouter-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=${{ steps.openrouter-review.outputs.fallback_reason }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${{ steps.openai-review.outputs.status }}" ]; then
+            echo "status=${{ steps.openai-review.outputs.status }}" >> "$GITHUB_OUTPUT"
+            echo "provider=${{ steps.openai-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=${{ steps.openai-review.outputs.fallback_reason }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "status=failed" >> "$GITHUB_OUTPUT"
+          echo "provider=none" >> "$GITHUB_OUTPUT"
+          echo "fallback_reason=Nenhum provider de review automatizado estava configurado para este repositorio." >> "$GITHUB_OUTPUT"
+
+      - name: Publish Codex review status as maintainer
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.commenter.outputs.available == 'true' }}
+        env:
+          CODEX_REVIEW_ENABLED: ${{ steps.review-config.outputs.enabled }}
+          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
+          COMMENTER_LOGIN: ${{ steps.commenter.outputs.login }}
+          OPENAI_PRESENT: ${{ steps.review-config.outputs.openai_present }}
+          OPENROUTER_PRESENT: ${{ steps.review-config.outputs.openrouter_present }}
+          REVIEW_STATUS: ${{ steps.review-result.outputs.status }}
+          REVIEW_PROVIDER: ${{ steps.review-result.outputs.provider }}
+          REVIEW_PATH: ${{ steps.review-result.outputs.review_path }}
+          REVIEW_FALLBACK_REASON: ${{ steps.review-result.outputs.fallback_reason }}
+          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          marker=$(cat "$GITHUB_WORKSPACE/.github/prompts/codex-comment-marker.txt")
+          readiness_template="$GITHUB_WORKSPACE/.github/prompts/codex-readiness.md"
+          fallback_template="$GITHUB_WORKSPACE/.github/prompts/codex-fallback.md"
+          pr_number=$(jq -r '.number' "$PR_CONTEXT_DIR/pr.json")
+          pr_sha=$(jq -r '.sha' "$PR_CONTEXT_DIR/pr.json")
+          comments_url="${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments"
+          comment_body_path="$RUNNER_TEMP/codex-review/final-comment.md"
+
+          render_template() {
+            local template_path="$1"
+            local rendered
+            rendered=$(cat "$template_path")
+            rendered=${rendered//\{\{sha\}\}/$pr_sha}
+            rendered=${rendered//\{\{reason\}\}/${REVIEW_FALLBACK_REASON:-A automacao executou, mas nao produziu conteudo publicavel.}}
+            printf '%s' "$rendered"
+          }
+
+          if [ "$CODEX_REVIEW_ENABLED" != "true" ]; then
+            {
+              printf '%s\n' "$marker"
+              render_template "$readiness_template"
+            } > "$comment_body_path"
+          elif [ "$OPENAI_PRESENT" != "true" ] && [ "$OPENROUTER_PRESENT" != "true" ]; then
+            {
+              printf '%s\n' "$marker"
+              printf '@codex review\n\n'
+              printf 'Codex review automation esta habilitada, mas nenhum provider automatizado esta configurado para este repositorio.\n\n'
+              printf 'Configure `OPENAI_API_KEY` ou o par `OPENROUTER_API_KEY` + `CODEX_REVIEW_OPENROUTER_MODEL`.\n\n'
+              printf 'Revisao humana continua obrigatoria.\n'
+            } > "$comment_body_path"
+          elif [ "$REVIEW_STATUS" = "completed" ] && [ -n "$REVIEW_PATH" ] && [ -f "$REVIEW_PATH" ]; then
+            review_text=$(cat "$REVIEW_PATH")
+            {
+              printf '%s\n' "$marker"
+              printf '@codex review\n\n'
+              printf 'Revisao automatica complementar concluida via %s para o commit %s.\n\n' "$REVIEW_PROVIDER" "$pr_sha"
+              printf '%s\n\n' "$review_text"
+              printf 'Esta revisao e advisory e nao substitui a revisao humana.\n'
+            } > "$comment_body_path"
+          else
+            {
+              printf '%s\n' "$marker"
+              printf '@codex review\n\n'
+              render_template "$fallback_template"
+            } > "$comment_body_path"
+          fi
+
+          existing_comment_id=$(
+            curl -fsSL \
+              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+              -H "Accept: application/vnd.github+json" \
+              "$comments_url?per_page=100" \
+              | jq -r --arg login "$COMMENTER_LOGIN" --arg marker "$marker" '
+                  .[]
+                  | select(.user.login == $login and ((.body // "") | contains($marker)))
+                  | .id
+                ' \
+              | head -n 1
+          )
+
+          if [ -n "$existing_comment_id" ]; then
+            jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+              | curl -fsSL -X PATCH \
+                  "${{ github.api_url }}/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
+                  -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "Content-Type: application/json" \
+                  --data @- \
+                  > /dev/null
+            exit 0
+          fi
+
+          jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+            | curl -fsSL -X POST \
+                "$comments_url" \
+                -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                -H "Accept: application/vnd.github+json" \
+                -H "Content-Type: application/json" \
+                --data @- \
+                > /dev/null
