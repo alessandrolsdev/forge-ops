@@ -2,11 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { GitHubPullRequestSyncError } from '../../../modules/github/github-app.errors.js';
 import type { Repository } from '../../../modules/repository-registry/repository.entity.js';
 import { RepositoryNotFoundError } from '../../../modules/repository-registry/repository.errors.js';
+import type { CodexReviewSummary } from '../../../modules/pull-request-insights/codex-review-summary.entity.js';
 import type {
   PullRequest,
   PullRequestState,
 } from '../../../modules/pull-request-insights/pull-request.entity.js';
+import { PullRequestNotFoundError } from '../../../modules/pull-request-insights/pull-request.errors.js';
 import { PullRequestService } from '../../../modules/pull-request-insights/pull-request.service.js';
+import type { Workflow } from '../../../modules/workflow-catalog/workflow.entity.js';
+import type { WorkflowRun } from '../../../modules/workflow-runs/workflow-run.entity.js';
 
 const buildRepository = (overrides: Partial<Repository> = {}): Repository => {
   const createdAt = new Date('2026-03-31T18:00:00.000Z');
@@ -65,6 +69,64 @@ const buildRemotePullRequest = (
     author: 'alessandrolsdev',
     baseBranch: 'main',
     headBranch: 'feature/pull-request-insights',
+    ...overrides,
+  };
+};
+
+const buildWorkflow = (overrides: Partial<Workflow> = {}): Workflow => {
+  const createdAt = new Date('2026-03-31T18:05:00.000Z');
+
+  return {
+    id: 'workflow_123',
+    repositoryId: 'repo_123',
+    githubWorkflowId: 'workflow-gh-123',
+    name: 'CI',
+    path: '.github/workflows/ci.yml',
+    state: 'active',
+    sourceType: 'local',
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  };
+};
+
+const buildWorkflowRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => {
+  const startedAt = new Date('2026-03-31T18:40:00.000Z');
+
+  return {
+    id: 'run_123',
+    workflowId: 'workflow_123',
+    githubRunId: 'run-gh-123',
+    status: 'completed',
+    conclusion: 'success',
+    branch: 'feature/pull-request-insights',
+    sha: 'abc123def456',
+    event: 'pull_request',
+    startedAt,
+    finishedAt: new Date('2026-03-31T18:45:00.000Z'),
+    durationMs: 300000,
+    createdAt: startedAt,
+    updatedAt: startedAt,
+    ...overrides,
+  };
+};
+
+const buildCodexReviewSummary = (
+  overrides: Partial<CodexReviewSummary> = {},
+): CodexReviewSummary => {
+  const createdAt = new Date('2026-03-31T18:50:00.000Z');
+
+  return {
+    id: 'summary_123',
+    pullRequestId: 'pr_123',
+    source: 'github_review',
+    summary: 'Codex sinalizou 2 achados relevantes.',
+    blockersCount: 1,
+    suggestionsCount: 1,
+    risksCount: 2,
+    rawContent: '[src/api.ts]\n[P1] Validar input',
+    createdAt,
+    updatedAt: createdAt,
     ...overrides,
   };
 };
@@ -485,6 +547,309 @@ describe('PullRequestService', () => {
         persistedPullRequestCount: 1,
       },
       'Pull request sync completed.',
+    );
+  });
+
+  it('should return pull request detail with summary and linked workflow runs', async () => {
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildPullRequest()),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([
+          buildWorkflow(),
+          buildWorkflow({
+            id: 'workflow_456',
+            githubWorkflowId: 'workflow-gh-456',
+            name: 'Deploy',
+          }),
+        ]),
+        findById: vi.fn(),
+      },
+      workflowRunRepository: {
+        createRun: vi.fn(),
+        upsertRun: vi.fn(),
+        listRunsByWorkflowId: vi
+          .fn()
+          .mockResolvedValueOnce([
+            buildWorkflowRun(),
+            buildWorkflowRun({
+              id: 'run_old',
+              githubRunId: 'run-gh-old',
+              createdAt: new Date('2026-03-31T18:00:00.000Z'),
+              startedAt: new Date('2026-03-31T18:00:00.000Z'),
+              finishedAt: new Date('2026-03-31T18:04:00.000Z'),
+            }),
+            buildWorkflowRun({
+              id: 'run_other_branch',
+              githubRunId: 'run-gh-other',
+              branch: 'main',
+            }),
+          ])
+          .mockResolvedValueOnce([
+            buildWorkflowRun({
+              id: 'run_456',
+              workflowId: 'workflow_456',
+              githubRunId: 'run-gh-456',
+              status: 'in_progress',
+              conclusion: null,
+              startedAt: new Date('2026-03-31T19:00:00.000Z'),
+              finishedAt: null,
+              createdAt: new Date('2026-03-31T19:00:00.000Z'),
+              updatedAt: new Date('2026-03-31T19:00:00.000Z'),
+            }),
+          ]),
+        findRunById: vi.fn(),
+        createJob: vi.fn(),
+        upsertJob: vi.fn(),
+        listJobsByWorkflowRunId: vi.fn(),
+      },
+      codexReviewSummaryRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        findByPullRequestId: vi.fn().mockResolvedValue(buildCodexReviewSummary()),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+    });
+
+    await expect(service.getDetailById('repo_123', 'pr_123')).resolves.toEqual({
+      id: 'pr_123',
+      number: 42,
+      title: 'Add pull request insights',
+      status: 'open',
+      author: 'alessandrolsdev',
+      summary: {
+        blockersCount: 1,
+        risksCount: 2,
+        suggestionsCount: 1,
+        lastReviewedAt: new Date('2026-03-31T18:50:00.000Z'),
+      },
+      workflows: [
+        {
+          name: 'Deploy',
+          status: 'in_progress',
+          conclusion: null,
+          startedAt: new Date('2026-03-31T19:00:00.000Z'),
+          finishedAt: null,
+        },
+        {
+          name: 'CI',
+          status: 'completed',
+          conclusion: 'success',
+          startedAt: new Date('2026-03-31T18:40:00.000Z'),
+          finishedAt: new Date('2026-03-31T18:45:00.000Z'),
+        },
+      ],
+    });
+  });
+
+  it('should return pull request detail without summary', async () => {
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildPullRequest()),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([buildWorkflow()]),
+        findById: vi.fn(),
+      },
+      workflowRunRepository: {
+        createRun: vi.fn(),
+        upsertRun: vi.fn(),
+        listRunsByWorkflowId: vi.fn().mockResolvedValue([buildWorkflowRun()]),
+        findRunById: vi.fn(),
+        createJob: vi.fn(),
+        upsertJob: vi.fn(),
+        listJobsByWorkflowRunId: vi.fn(),
+      },
+      codexReviewSummaryRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        findByPullRequestId: vi.fn().mockResolvedValue(null),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+    });
+
+    await expect(service.getDetailById('repo_123', 'pr_123')).resolves.toEqual({
+      id: 'pr_123',
+      number: 42,
+      title: 'Add pull request insights',
+      status: 'open',
+      author: 'alessandrolsdev',
+      summary: null,
+      workflows: [
+        {
+          name: 'CI',
+          status: 'completed',
+          conclusion: 'success',
+          startedAt: new Date('2026-03-31T18:40:00.000Z'),
+          finishedAt: new Date('2026-03-31T18:45:00.000Z'),
+        },
+      ],
+    });
+  });
+
+  it('should return pull request detail without linked workflows', async () => {
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildPullRequest()),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
+        findById: vi.fn(),
+      },
+      workflowRunRepository: {
+        createRun: vi.fn(),
+        upsertRun: vi.fn(),
+        listRunsByWorkflowId: vi.fn(),
+        findRunById: vi.fn(),
+        createJob: vi.fn(),
+        upsertJob: vi.fn(),
+        listJobsByWorkflowRunId: vi.fn(),
+      },
+      codexReviewSummaryRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        findByPullRequestId: vi.fn().mockResolvedValue(buildCodexReviewSummary()),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+    });
+
+    await expect(service.getDetailById('repo_123', 'pr_123')).resolves.toEqual({
+      id: 'pr_123',
+      number: 42,
+      title: 'Add pull request insights',
+      status: 'open',
+      author: 'alessandrolsdev',
+      summary: {
+        blockersCount: 1,
+        risksCount: 2,
+        suggestionsCount: 1,
+        lastReviewedAt: new Date('2026-03-31T18:50:00.000Z'),
+      },
+      workflows: [],
+    });
+  });
+
+  it('should fail with pull request not found when the pull request does not exist', async () => {
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn().mockResolvedValue(null),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+    });
+
+    await expect(service.getDetailById('repo_123', 'pr_missing')).rejects.toBeInstanceOf(
+      PullRequestNotFoundError,
     );
   });
 });
