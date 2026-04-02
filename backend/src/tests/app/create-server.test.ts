@@ -17,6 +17,7 @@ import type {
   WorkflowRun,
 } from '../../modules/workflow-runs/workflow-run.entity.js';
 import type { PullRequest } from '../../modules/pull-request-insights/pull-request.entity.js';
+import type { CodexReviewSummary } from '../../modules/pull-request-insights/codex-review-summary.entity.js';
 
 const buildRepository = (
   overrides: Partial<Repository> = {},
@@ -139,12 +140,33 @@ const buildPullRequest = (overrides: Partial<PullRequest> = {}): PullRequest => 
   };
 };
 
+const buildCodexReviewSummary = (
+  overrides: Partial<CodexReviewSummary> = {},
+): CodexReviewSummary => {
+  const createdAt = new Date('2026-03-31T18:50:00.000Z');
+
+  return {
+    id: 'summary_123',
+    pullRequestId: 'pr_123',
+    source: 'github_review',
+    summary: 'Codex sinalizou 2 achados relevantes.',
+    blockersCount: 1,
+    suggestionsCount: 1,
+    risksCount: 2,
+    rawContent: '[src/api.ts]\n[P1] Validar input',
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  };
+};
+
 const createProtectedServer = (overrides?: {
   repositories?: Repository[];
   workflows?: Workflow[];
   workflowRuns?: WorkflowRun[];
   workflowJobs?: WorkflowJob[];
   pullRequests?: PullRequest[];
+  codexReviewSummaries?: CodexReviewSummary[];
   createRepository?: (input: CreateRepositoryInput) => Promise<Repository>;
   deleteRepositoryById?: (id: string) => Promise<void>;
   installationRepositories?: GitHubInstallationRepository[];
@@ -164,6 +186,9 @@ const createProtectedServer = (overrides?: {
   const workflowRunStore: WorkflowRun[] = [...(overrides?.workflowRuns ?? [])];
   const workflowJobStore: WorkflowJob[] = [...(overrides?.workflowJobs ?? [])];
   const pullRequestStore: PullRequest[] = [...(overrides?.pullRequests ?? [])];
+  const codexReviewSummaryStore: CodexReviewSummary[] = [
+    ...(overrides?.codexReviewSummaries ?? []),
+  ];
 
   return createServer({
     env: {
@@ -227,7 +252,7 @@ const createProtectedServer = (overrides?: {
       listWorkflowRuns: async () => [],
       listWorkflowRunJobs: async () => [],
       listPullRequests: async () => [],
-        listPullRequestReviewComments: async () => [],
+      listPullRequestReviewComments: async () => [],
     },
     repositoryRegistryRepository: {
       list: async () => [...repositoryStore],
@@ -436,6 +461,48 @@ const createProtectedServer = (overrides?: {
           .sort((left, right) => right.number - left.number),
       findById: async (id) =>
         pullRequestStore.find((pullRequest) => pullRequest.id === id) ?? null,
+    },
+    codexReviewSummaryRepository: {
+      create: async (input) =>
+        buildCodexReviewSummary({
+          pullRequestId: input.pullRequestId,
+          source: input.source,
+          summary: input.summary,
+          blockersCount: input.blockersCount,
+          suggestionsCount: input.suggestionsCount,
+          risksCount: input.risksCount,
+          rawContent: input.rawContent,
+        }),
+      upsert: async (input) => {
+        const existingSummaryIndex = codexReviewSummaryStore.findIndex(
+          (summary) => summary.pullRequestId === input.pullRequestId,
+        );
+        const summary = buildCodexReviewSummary({
+          id:
+            existingSummaryIndex >= 0
+              ? codexReviewSummaryStore[existingSummaryIndex]!.id
+              : `summary_${codexReviewSummaryStore.length + 1}`,
+          pullRequestId: input.pullRequestId,
+          source: input.source,
+          summary: input.summary,
+          blockersCount: input.blockersCount,
+          suggestionsCount: input.suggestionsCount,
+          risksCount: input.risksCount,
+          rawContent: input.rawContent,
+        });
+
+        if (existingSummaryIndex >= 0) {
+          codexReviewSummaryStore[existingSummaryIndex] = summary;
+        } else {
+          codexReviewSummaryStore.push(summary);
+        }
+
+        return summary;
+      },
+      findByPullRequestId: async (pullRequestId) =>
+        codexReviewSummaryStore.find(
+          (summary) => summary.pullRequestId === pullRequestId,
+        ) ?? null,
     },
   });
 };
@@ -1578,6 +1645,278 @@ describe('createServer', () => {
           updatedAt: '2026-03-31T18:20:00.000Z',
         },
       ],
+    });
+
+    await server.close();
+  });
+
+  it('should require authentication for pull request detail', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_123',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'authentication_required',
+        message: 'Authentication is required.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should reject invalid pull request detail route params before service execution', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/%20/pull-requests/pr_123',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'validation_error',
+        message: 'String must contain at least 1 character(s)',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return repository not found for pull request detail', async () => {
+    const server = createProtectedServer();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_missing/pull-requests/pr_123',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'repository_not_found',
+        message: 'Repository was not found.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return pull request not found when the pull request does not belong to the repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [
+        buildPullRequest({
+          id: 'pr_other',
+          repositoryId: 'repo_other',
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_other',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'pull_request_not_found',
+        message: 'Pull request was not found.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return pull request detail with summary and linked workflows', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+      codexReviewSummaries: [buildCodexReviewSummary()],
+      workflows: [
+        buildWorkflow(),
+        buildWorkflow({
+          id: 'workflow_456',
+          githubWorkflowId: 'workflow-gh-456',
+          name: 'Deploy',
+        }),
+      ],
+      workflowRuns: [
+        buildWorkflowRun({
+          branch: 'feature/pull-request-insights',
+          startedAt: new Date('2026-03-31T18:40:00.000Z'),
+          finishedAt: new Date('2026-03-31T18:45:00.000Z'),
+          createdAt: new Date('2026-03-31T18:40:00.000Z'),
+          updatedAt: new Date('2026-03-31T18:40:00.000Z'),
+        }),
+        buildWorkflowRun({
+          id: 'run_456',
+          workflowId: 'workflow_456',
+          githubRunId: 'run-gh-456',
+          status: 'in_progress',
+          conclusion: null,
+          branch: 'feature/pull-request-insights',
+          startedAt: new Date('2026-03-31T19:00:00.000Z'),
+          finishedAt: null,
+          createdAt: new Date('2026-03-31T19:00:00.000Z'),
+          updatedAt: new Date('2026-03-31T19:00:00.000Z'),
+        }),
+        buildWorkflowRun({
+          id: 'run_ignored_old',
+          githubRunId: 'run-gh-old',
+          startedAt: new Date('2026-03-31T18:00:00.000Z'),
+          finishedAt: new Date('2026-03-31T18:04:00.000Z'),
+          createdAt: new Date('2026-03-31T18:00:00.000Z'),
+          updatedAt: new Date('2026-03-31T18:04:00.000Z'),
+        }),
+        buildWorkflowRun({
+          id: 'run_ignored_branch',
+          githubRunId: 'run-gh-branch',
+          branch: 'main',
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_123',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      id: 'pr_123',
+      number: 42,
+      title: 'Add pull request insights',
+      status: 'open',
+      author: 'alessandrolsdev',
+      summary: {
+        blockersCount: 1,
+        risksCount: 2,
+        suggestionsCount: 1,
+        lastReviewedAt: '2026-03-31T18:50:00.000Z',
+      },
+      workflows: [
+        {
+          name: 'Deploy',
+          status: 'in_progress',
+          conclusion: null,
+          startedAt: '2026-03-31T19:00:00.000Z',
+          finishedAt: null,
+        },
+        {
+          name: 'CI',
+          status: 'completed',
+          conclusion: 'success',
+          startedAt: '2026-03-31T18:40:00.000Z',
+          finishedAt: '2026-03-31T18:45:00.000Z',
+        },
+      ],
+    });
+
+    await server.close();
+  });
+
+  it('should return pull request detail without summary', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+      workflows: [buildWorkflow()],
+      workflowRuns: [
+        buildWorkflowRun({
+          branch: 'feature/pull-request-insights',
+          startedAt: new Date('2026-03-31T18:40:00.000Z'),
+          finishedAt: new Date('2026-03-31T18:45:00.000Z'),
+          createdAt: new Date('2026-03-31T18:40:00.000Z'),
+          updatedAt: new Date('2026-03-31T18:40:00.000Z'),
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_123',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      id: 'pr_123',
+      number: 42,
+      title: 'Add pull request insights',
+      status: 'open',
+      author: 'alessandrolsdev',
+      summary: null,
+      workflows: [
+        {
+          name: 'CI',
+          status: 'completed',
+          conclusion: 'success',
+          startedAt: '2026-03-31T18:40:00.000Z',
+          finishedAt: '2026-03-31T18:45:00.000Z',
+        },
+      ],
+    });
+
+    await server.close();
+  });
+
+  it('should return pull request detail without linked workflows', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+      codexReviewSummaries: [buildCodexReviewSummary()],
+      workflows: [],
+      workflowRuns: [],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_123',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      id: 'pr_123',
+      number: 42,
+      title: 'Add pull request insights',
+      status: 'open',
+      author: 'alessandrolsdev',
+      summary: {
+        blockersCount: 1,
+        risksCount: 2,
+        suggestionsCount: 1,
+        lastReviewedAt: '2026-03-31T18:50:00.000Z',
+      },
+      workflows: [],
     });
 
     await server.close();
