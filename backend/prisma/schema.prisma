@@ -91,10 +91,27 @@ model PullRequest {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   repository   Repository       @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  codexReviewSummary CodexReviewSummary?
 
   @@unique([repositoryId, githubPrId])
   @@unique([repositoryId, number])
   @@index([repositoryId, createdAt])
+}
+
+model CodexReviewSummary {
+  id               String                   @id @default(cuid())
+  pullRequestId    String                   @unique
+  source           CodexReviewSummarySource
+  summary          String
+  blockersCount    Int
+  suggestionsCount Int
+  risksCount       Int
+  rawContent       String
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  pullRequest      PullRequest              @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@index([pullRequestId, createdAt])
 }
 
 enum WorkflowState {
@@ -135,5 +152,10 @@ enum PullRequestState {
   open
   closed
   merged
+}
+
+enum CodexReviewSummarySource {
+  github_review
+  workflow_comment
 }
 

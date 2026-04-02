@@ -111,6 +111,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -160,6 +161,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -190,6 +192,7 @@ describe('PullRequestService', () => {
           state: 'merged',
         }),
       );
+    const syncByPullRequest = vi.fn().mockResolvedValue(null);
     const service = new PullRequestService({
       repositoryRegistryRepository: {
         create: vi.fn(),
@@ -219,6 +222,10 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests,
+        listPullRequestReviewComments: async () => [],
+      },
+      codexReviewSummaryService: {
+        syncByPullRequest,
       },
     });
 
@@ -258,6 +265,17 @@ describe('PullRequestService', () => {
       baseBranch: 'main',
       headBranch: 'feature/pull-request-insights',
     });
+    expect(syncByPullRequest).toHaveBeenNthCalledWith(1, buildPullRequest());
+    expect(syncByPullRequest).toHaveBeenNthCalledWith(
+      2,
+      buildPullRequest({
+        id: 'pr_456',
+        githubPrId: '987654322',
+        number: 43,
+        title: 'Close flaky workflow gap',
+        state: 'merged',
+      }),
+    );
   });
 
   it('should return an empty list when GitHub has no pull requests for the repository', async () => {
@@ -291,6 +309,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests,
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -331,6 +350,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -375,6 +395,7 @@ describe('PullRequestService', () => {
         listPullRequests: async () => {
           throw new GitHubPullRequestSyncError();
         },
+        listPullRequestReviewComments: async () => [],
       },
       logger,
     });
