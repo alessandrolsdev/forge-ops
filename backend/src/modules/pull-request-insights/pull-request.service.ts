@@ -81,13 +81,31 @@ export class PullRequestService {
       );
 
       if (this.options.codexReviewSummaryService) {
-        await Promise.all(
+        const summarySyncResults = await Promise.allSettled(
           persistedPullRequests.map((pullRequest) =>
-            this.options.codexReviewSummaryService!.syncByPullRequest(
-              pullRequest,
-            ),
+            this.options.codexReviewSummaryService!.syncByPullRequest(pullRequest),
           ),
         );
+
+        summarySyncResults.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            return;
+          }
+
+          const pullRequest = persistedPullRequests[index];
+
+          this.logger.error(
+            {
+              event: 'codex_review_summary_sync_failed_non_blocking',
+              repositoryId: repository.id,
+              pullRequestId: pullRequest?.id,
+              githubPrId: pullRequest?.githubPrId,
+              githubPrNumber: pullRequest?.number,
+              ...serializeApplicationError(result.reason),
+            },
+            'Codex review summary sync failed, but pull request sync will continue.',
+          );
+        });
       }
 
       this.logger.info(
