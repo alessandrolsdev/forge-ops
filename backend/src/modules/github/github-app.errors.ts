@@ -40,6 +40,16 @@ export class GitHubPullRequestSyncError extends ApplicationError {
   }
 }
 
+export class GitHubPullRequestReviewSyncError extends ApplicationError {
+  constructor() {
+    super(
+      'GitHub pull request reviews are currently unavailable.',
+      503,
+      'github_pull_request_review_sync_unavailable',
+    );
+  }
+}
+
 export class GitHubWebhookVerificationError extends ApplicationError {
   constructor() {
     super(

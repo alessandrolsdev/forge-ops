@@ -25,6 +25,9 @@ import { WorkflowRunService } from '../modules/workflow-runs/workflow-run.servic
 import { PrismaPullRequestRepository } from '../modules/pull-request-insights/pull-request.prisma-repository.js';
 import type { PullRequestRepository } from '../modules/pull-request-insights/pull-request.repository.js';
 import { PullRequestService } from '../modules/pull-request-insights/pull-request.service.js';
+import { PrismaCodexReviewSummaryRepository } from '../modules/pull-request-insights/codex-review-summary.prisma-repository.js';
+import { CodexReviewSummaryService } from '../modules/pull-request-insights/codex-review-summary.service.js';
+import type { CodexReviewSummaryRepository } from '../modules/pull-request-insights/codex-review-summary.repository.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 export interface CreateServerOptions {
@@ -37,6 +40,7 @@ export interface CreateServerOptions {
   workflowCatalogRepository?: WorkflowRepository;
   workflowRunRepository?: WorkflowRunRepository;
   pullRequestRepository?: PullRequestRepository;
+  codexReviewSummaryRepository?: CodexReviewSummaryRepository;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -57,7 +61,8 @@ export const createServer = (options: CreateServerOptions) => {
     options.repositoryRegistryRepository &&
     options.workflowCatalogRepository &&
     options.workflowRunRepository &&
-    options.pullRequestRepository
+    options.pullRequestRepository &&
+    options.codexReviewSummaryRepository
       ? null
       : createPrismaClient();
   const githubBoundary =
@@ -80,6 +85,9 @@ export const createServer = (options: CreateServerOptions) => {
   const pullRequestRepository =
     options.pullRequestRepository ??
     new PrismaPullRequestRepository(prismaClient!.pullRequest);
+  const codexReviewSummaryRepository =
+    options.codexReviewSummaryRepository ??
+    new PrismaCodexReviewSummaryRepository(prismaClient!.codexReviewSummary);
   const healthService = new HealthService({
     githubBoundary,
     repository: healthRepository,
@@ -101,6 +109,13 @@ export const createServer = (options: CreateServerOptions) => {
     repositoryRegistryRepository,
     pullRequestRepository,
     githubBoundary,
+    codexReviewSummaryService: new CodexReviewSummaryService({
+      repositoryRegistryRepository,
+      pullRequestRepository,
+      codexReviewSummaryRepository,
+      githubBoundary,
+      logger: app.log,
+    }),
     logger: app.log,
   });
   const repositoryService = new RepositoryService({

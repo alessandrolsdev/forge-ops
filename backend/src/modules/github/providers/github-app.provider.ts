@@ -5,6 +5,7 @@ import type {
   GitHubInstallationRepository,
   GitHubAppStatus,
   GitHubPullRequestDescriptor,
+  GitHubPullRequestReviewCommentDescriptor,
   GitHubRepositoryDescriptor,
   GitHubWorkflowDescriptor,
   GitHubWorkflowJobDescriptor,
@@ -15,6 +16,7 @@ import { ConfigurationError } from '../../../shared/errors/configuration-error.j
 import {
   GitHubRepositoryDiscoveryError,
   GitHubPullRequestSyncError,
+  GitHubPullRequestReviewSyncError,
   GitHubWorkflowCatalogSyncError,
   GitHubWorkflowRunsSyncError,
 } from '../github-app.errors.js';
@@ -105,6 +107,20 @@ const githubPullRequestsSchema = z.array(
     head: z.object({
       ref: z.string().trim().min(1),
     }),
+  }),
+);
+
+const githubPullRequestReviewCommentsSchema = z.array(
+  z.object({
+    id: z.number().int().nonnegative(),
+    body: z.string().nullable(),
+    path: z.string().trim().min(1).nullable(),
+    created_at: z.string().trim().min(1).nullable(),
+    user: z
+      .object({
+        login: z.string().trim().min(1),
+      })
+      .nullable(),
   }),
 );
 
@@ -330,6 +346,38 @@ export class GitHubAppProvider implements GitHubAppBoundary {
     }
   }
 
+  public async listPullRequestReviewComments(
+    repository: GitHubRepositoryDescriptor,
+    pullRequestNumber: number,
+  ): Promise<GitHubPullRequestReviewCommentDescriptor[]> {
+    this.assertConfigured();
+
+    try {
+      const installationToken = await this.createInstallationAccessToken();
+      const payload = await this.requestJson(
+        `${this.apiBaseUrl}/repos/${repository.owner}/${repository.name}/pulls/${pullRequestNumber}/comments?per_page=100`,
+        {
+          method: 'GET',
+          headers: this.createJsonHeaders(`Bearer ${installationToken}`),
+        },
+        githubPullRequestReviewCommentsSchema,
+      );
+
+      return payload.map((comment) =>
+        mapGitHubPullRequestReviewCommentDescriptor(comment),
+      );
+    } catch (error) {
+      if (
+        error instanceof ConfigurationError ||
+        error instanceof GitHubPullRequestReviewSyncError
+      ) {
+        throw error;
+      }
+
+      throw new GitHubPullRequestReviewSyncError();
+    }
+  }
+
   private async createInstallationAccessToken(): Promise<string> {
     const config = this.config;
 
@@ -458,6 +506,18 @@ const mapGitHubPullRequestDescriptor = (
     author: pullRequest.user?.login ?? 'unknown',
     baseBranch: pullRequest.base.ref,
     headBranch: pullRequest.head.ref,
+  };
+};
+
+const mapGitHubPullRequestReviewCommentDescriptor = (
+  comment: z.infer<typeof githubPullRequestReviewCommentsSchema>[number],
+): GitHubPullRequestReviewCommentDescriptor => {
+  return {
+    githubReviewCommentId: String(comment.id),
+    reviewerLogin: comment.user?.login ?? 'unknown',
+    body: comment.body ?? '',
+    path: comment.path,
+    createdAt: parseGitHubDate(comment.created_at),
   };
 };
 
