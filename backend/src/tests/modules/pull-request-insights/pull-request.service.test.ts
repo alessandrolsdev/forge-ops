@@ -111,6 +111,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -160,6 +161,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -190,6 +192,7 @@ describe('PullRequestService', () => {
           state: 'merged',
         }),
       );
+    const syncByPullRequest = vi.fn().mockResolvedValue(null);
     const service = new PullRequestService({
       repositoryRegistryRepository: {
         create: vi.fn(),
@@ -219,6 +222,10 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests,
+        listPullRequestReviewComments: async () => [],
+      },
+      codexReviewSummaryService: {
+        syncByPullRequest,
       },
     });
 
@@ -258,6 +265,17 @@ describe('PullRequestService', () => {
       baseBranch: 'main',
       headBranch: 'feature/pull-request-insights',
     });
+    expect(syncByPullRequest).toHaveBeenNthCalledWith(1, buildPullRequest());
+    expect(syncByPullRequest).toHaveBeenNthCalledWith(
+      2,
+      buildPullRequest({
+        id: 'pr_456',
+        githubPrId: '987654322',
+        number: 43,
+        title: 'Close flaky workflow gap',
+        state: 'merged',
+      }),
+    );
   });
 
   it('should return an empty list when GitHub has no pull requests for the repository', async () => {
@@ -291,6 +309,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests,
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -331,6 +350,7 @@ describe('PullRequestService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -375,6 +395,7 @@ describe('PullRequestService', () => {
         listPullRequests: async () => {
           throw new GitHubPullRequestSyncError();
         },
+        listPullRequestReviewComments: async () => [],
       },
       logger,
     });
@@ -392,6 +413,78 @@ describe('PullRequestService', () => {
         errorStatusCode: 503,
       },
       'Pull request sync failed.',
+    );
+  });
+
+  it('should continue pull request sync when codex review summary sync fails', async () => {
+    const findById = vi.fn().mockResolvedValue(buildRepository());
+    const listPullRequests = vi.fn().mockResolvedValue([buildRemotePullRequest()]);
+    const upsert = vi.fn().mockResolvedValue(buildPullRequest());
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById,
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert,
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests,
+        listPullRequestReviewComments: async () => [],
+      },
+      codexReviewSummaryService: {
+        syncByPullRequest: vi.fn().mockRejectedValue(new Error('upstream timeout')),
+      },
+      logger,
+    });
+
+    await expect(service.syncByRepositoryId('repo_123')).resolves.toEqual([
+      buildPullRequest(),
+    ]);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        event: 'codex_review_summary_sync_failed_non_blocking',
+        repositoryId: 'repo_123',
+        pullRequestId: 'pr_123',
+        githubPrId: '987654321',
+        githubPrNumber: 42,
+        errorName: 'Error',
+      },
+      'Codex review summary sync failed, but pull request sync will continue.',
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event: 'pull_request_sync_succeeded',
+        repositoryId: 'repo_123',
+        fullName: 'forgeops/backend',
+        remotePullRequestCount: 1,
+        persistedPullRequestCount: 1,
+      },
+      'Pull request sync completed.',
     );
   });
 });

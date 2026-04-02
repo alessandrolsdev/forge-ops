@@ -5,6 +5,7 @@ import { RepositoryNotFoundError } from '../repository-registry/repository.error
 import type { RepositoryRepository } from '../repository-registry/repository.repository.js';
 import type { PullRequest } from './pull-request.entity.js';
 import type { PullRequestRepository } from './pull-request.repository.js';
+import type { CodexReviewSummaryService } from './codex-review-summary.service.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 
@@ -17,6 +18,10 @@ export interface PullRequestServiceOptions {
   repositoryRegistryRepository: RepositoryRepository;
   pullRequestRepository: PullRequestRepository;
   githubBoundary: GitHubAppBoundary;
+  codexReviewSummaryService?: Pick<
+    CodexReviewSummaryService,
+    'syncByPullRequest'
+  >;
   logger?: ServiceLogger;
 }
 
@@ -74,6 +79,34 @@ export class PullRequestService {
           }),
         ),
       );
+
+      if (this.options.codexReviewSummaryService) {
+        const summarySyncResults = await Promise.allSettled(
+          persistedPullRequests.map((pullRequest) =>
+            this.options.codexReviewSummaryService!.syncByPullRequest(pullRequest),
+          ),
+        );
+
+        summarySyncResults.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            return;
+          }
+
+          const pullRequest = persistedPullRequests[index];
+
+          this.logger.error(
+            {
+              event: 'codex_review_summary_sync_failed_non_blocking',
+              repositoryId: repository.id,
+              pullRequestId: pullRequest?.id,
+              githubPrId: pullRequest?.githubPrId,
+              githubPrNumber: pullRequest?.number,
+              ...serializeApplicationError(result.reason),
+            },
+            'Codex review summary sync failed, but pull request sync will continue.',
+          );
+        });
+      }
 
       this.logger.info(
         {

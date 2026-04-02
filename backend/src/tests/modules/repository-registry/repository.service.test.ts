@@ -93,6 +93,7 @@ describe('RepositoryService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -144,6 +145,7 @@ describe('RepositoryService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi.fn().mockResolvedValue([]),
@@ -201,6 +203,7 @@ describe('RepositoryService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi.fn().mockResolvedValue([]),
@@ -257,6 +260,7 @@ describe('RepositoryService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi.fn(),
@@ -311,6 +315,7 @@ describe('RepositoryService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi
@@ -375,6 +380,7 @@ describe('RepositoryService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
     });
 
@@ -419,6 +425,7 @@ describe('RepositoryService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       workflowCatalogSync: {
         syncByRepositoryId: vi.fn().mockResolvedValue([]),
