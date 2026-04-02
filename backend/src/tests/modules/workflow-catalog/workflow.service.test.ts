@@ -101,6 +101,7 @@ describe('WorkflowService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       logger,
     });
@@ -183,6 +184,7 @@ describe('WorkflowService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       logger,
     });
@@ -238,6 +240,7 @@ describe('WorkflowService', () => {
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
         listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
       },
       logger,
     });

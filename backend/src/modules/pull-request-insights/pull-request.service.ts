@@ -5,6 +5,7 @@ import { RepositoryNotFoundError } from '../repository-registry/repository.error
 import type { RepositoryRepository } from '../repository-registry/repository.repository.js';
 import type { PullRequest } from './pull-request.entity.js';
 import type { PullRequestRepository } from './pull-request.repository.js';
+import type { CodexReviewSummaryService } from './codex-review-summary.service.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 
@@ -17,6 +18,10 @@ export interface PullRequestServiceOptions {
   repositoryRegistryRepository: RepositoryRepository;
   pullRequestRepository: PullRequestRepository;
   githubBoundary: GitHubAppBoundary;
+  codexReviewSummaryService?: Pick<
+    CodexReviewSummaryService,
+    'syncByPullRequest'
+  >;
   logger?: ServiceLogger;
 }
 
@@ -74,6 +79,16 @@ export class PullRequestService {
           }),
         ),
       );
+
+      if (this.options.codexReviewSummaryService) {
+        await Promise.all(
+          persistedPullRequests.map((pullRequest) =>
+            this.options.codexReviewSummaryService!.syncByPullRequest(
+              pullRequest,
+            ),
+          ),
+        );
+      }
 
       this.logger.info(
         {

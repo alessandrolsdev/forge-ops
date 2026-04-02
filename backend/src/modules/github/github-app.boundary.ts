@@ -67,6 +67,14 @@ export interface GitHubPullRequestDescriptor {
   headBranch: string;
 }
 
+export interface GitHubPullRequestReviewCommentDescriptor {
+  githubReviewCommentId: string;
+  reviewerLogin: string;
+  body: string;
+  path: string | null;
+  createdAt: Date | null;
+}
+
 export interface GitHubAppBoundary {
   readonly mode: 'github-app';
   readonly configured: boolean;
@@ -87,6 +95,10 @@ export interface GitHubAppBoundary {
   listPullRequests(
     repository: GitHubRepositoryDescriptor,
   ): Promise<GitHubPullRequestDescriptor[]>;
+  listPullRequestReviewComments(
+    repository: GitHubRepositoryDescriptor,
+    pullRequestNumber: number,
+  ): Promise<GitHubPullRequestReviewCommentDescriptor[]>;
 }
 
 export interface GitHubAppStatus {

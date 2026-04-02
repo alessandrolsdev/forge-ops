@@ -3,6 +3,7 @@ import { createGitHubAppBoundary } from '../../../modules/github/github-app.boun
 import {
   GitHubRepositoryDiscoveryError,
   GitHubPullRequestSyncError,
+  GitHubPullRequestReviewSyncError,
   GitHubWorkflowCatalogSyncError,
   GitHubWorkflowRunsSyncError,
 } from '../../../modules/github/github-app.errors.js';
@@ -518,6 +519,117 @@ describe('GitHubAppProvider', () => {
         name: 'backend',
       }),
     ).rejects.toBeInstanceOf(GitHubPullRequestSyncError);
+  });
+
+  it('should exchange credentials and normalize pull request review comments', async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'installation-token' }), {
+          status: 201,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 7001,
+              body: '[P1] Validar input da rota',
+              path: 'src/api.ts',
+              created_at: '2026-04-02T00:10:00.000Z',
+              user: {
+                login: 'codex-reviewer',
+              },
+            },
+            {
+              id: 7002,
+              body: null,
+              path: null,
+              created_at: null,
+              user: null,
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-04-02T00:11:00.000Z'),
+    });
+
+    await expect(
+      boundary.listPullRequestReviewComments(
+        {
+          owner: 'forgeops',
+          name: 'backend',
+        },
+        42,
+      ),
+    ).resolves.toEqual([
+      {
+        githubReviewCommentId: '7001',
+        reviewerLogin: 'codex-reviewer',
+        body: '[P1] Validar input da rota',
+        path: 'src/api.ts',
+        createdAt: new Date('2026-04-02T00:10:00.000Z'),
+      },
+      {
+        githubReviewCommentId: '7002',
+        reviewerLogin: 'unknown',
+        body: '',
+        path: null,
+        createdAt: null,
+      },
+    ]);
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      'https://api.github.test/repos/forgeops/backend/pulls/42/comments?per_page=100',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Accept: 'application/vnd.github+json',
+          Authorization: 'Bearer installation-token',
+        }),
+      }),
+    );
+  });
+
+  it('should raise a safe pull request review sync error when review comment sync fails', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'rate limited' }), {
+        status: 403,
+        headers: {
+          'content-type': 'application/json',
+        },
+      }),
+    );
+    const boundary = createGitHubAppBoundary(buildConfig(), {
+      apiBaseUrl: 'https://api.github.test',
+      fetchImplementation,
+      appJwtFactory: () => 'app-jwt',
+      now: () => new Date('2026-04-02T00:12:00.000Z'),
+    });
+
+    await expect(
+      boundary.listPullRequestReviewComments(
+        {
+          owner: 'forgeops',
+          name: 'backend',
+        },
+        42,
+      ),
+    ).rejects.toBeInstanceOf(GitHubPullRequestReviewSyncError);
   });
 
   it('should fail safely when GitHub returns an unsupported workflow run status', async () => {
