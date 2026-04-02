@@ -85,6 +85,7 @@ jobs:
           set -euo pipefail
 
           response_path="$RUNNER_TEMP/codex-review/commenter.json"
+          mkdir -p "$(dirname "$response_path")"
           http_status=$(
             curl -s \
               -o "$response_path" \
@@ -622,8 +623,8 @@ jobs:
           echo "provider=none" >> "$GITHUB_OUTPUT"
           echo "fallback_reason=Nenhum provider de review automatizado estava configurado para este repositorio." >> "$GITHUB_OUTPUT"
 
-      - name: Publish Codex review status as maintainer
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.commenter.outputs.available == 'true' }}
+      - name: Publish Codex review status
+        if: ${{ always() && !github.event.pull_request.head.repo.fork }}
         env:
           CODEX_REVIEW_ENABLED: ${{ steps.review-config.outputs.enabled }}
           CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
