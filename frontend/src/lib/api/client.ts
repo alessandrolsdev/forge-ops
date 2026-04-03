@@ -107,6 +107,43 @@ const pullRequestsResponseSchema = z.object({
   pullRequests: z.array(pullRequestItemSchema),
 });
 
+const pullRequestDetailResponseSchema = z.object({
+  id: z.string().min(1),
+  number: z.number().int().nonnegative(),
+  title: z.string().min(1),
+  status: z.enum(['open', 'closed', 'merged']),
+  author: z.string().min(1),
+  summary: z
+    .object({
+      blockersCount: z.number().int().nonnegative(),
+      risksCount: z.number().int().nonnegative(),
+      suggestionsCount: z.number().int().nonnegative(),
+      lastReviewedAt: z.string().datetime(),
+    })
+    .nullable(),
+  workflows: z.array(
+    z.object({
+      name: z.string().min(1),
+      status: z.enum(['queued', 'in_progress', 'completed', 'pending', 'waiting', 'requested']),
+      conclusion: z
+        .enum([
+          'success',
+          'failure',
+          'neutral',
+          'cancelled',
+          'skipped',
+          'timed_out',
+          'action_required',
+          'stale',
+          'startup_failure',
+        ])
+        .nullable(),
+      startedAt: z.string().datetime().nullable(),
+      finishedAt: z.string().datetime().nullable(),
+    }),
+  ),
+});
+
 const workflowRunItemSchema = z.object({
   id: z.string().min(1),
   workflowId: z.string().min(1),
@@ -174,6 +211,7 @@ export type RepositoryDiscoveryItem = z.infer<typeof repositoryDiscoveryItemSche
 export type CreateRepositoryInput = z.infer<typeof createRepositoryInputSchema>;
 export type WorkflowCatalogItem = z.infer<typeof workflowCatalogItemSchema>;
 export type PullRequestItem = z.infer<typeof pullRequestItemSchema>;
+export type PullRequestDetailResponse = z.infer<typeof pullRequestDetailResponseSchema>;
 export type WorkflowRunItem = z.infer<typeof workflowRunItemSchema>;
 export type WorkflowRunJobItem = z.infer<typeof workflowRunJobItemSchema>;
 export type WorkflowRunDetailResponse = z.infer<typeof workflowRunDetailResponseSchema>;
@@ -205,6 +243,11 @@ export interface ForgeOpsApiClient {
     repositoryId: string,
   ): Promise<WorkflowCatalogItem[]>;
   getPullRequests(accessToken: string, repositoryId: string): Promise<PullRequestItem[]>;
+  getPullRequestDetail(
+    accessToken: string,
+    repositoryId: string,
+    pullRequestId: string,
+  ): Promise<PullRequestDetailResponse>;
   getWorkflowRuns(
     accessToken: string,
     repositoryId: string,
@@ -319,6 +362,28 @@ export const createApiClient = (options: CreateApiClientOptions = {}): ForgeOpsA
       }
 
       return pullRequestsResponseSchema.parse(await response.json()).pullRequests;
+    },
+
+    async getPullRequestDetail(
+      accessToken: string,
+      repositoryId: string,
+      pullRequestId: string,
+    ): Promise<PullRequestDetailResponse> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/pull-requests/${pullRequestId}`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch pull request detail (${response.status})`,
+        );
+      }
+
+      return pullRequestDetailResponseSchema.parse(await response.json());
     },
 
     async getWorkflowRuns(
