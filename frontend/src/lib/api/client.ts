@@ -90,6 +90,23 @@ const workflowCatalogResponseSchema = z.object({
   workflows: z.array(workflowCatalogItemSchema),
 });
 
+const pullRequestItemSchema = z.object({
+  id: z.string().min(1),
+  githubPrId: z.string().min(1),
+  number: z.number().int().nonnegative(),
+  title: z.string().min(1),
+  state: z.enum(['open', 'closed', 'merged']),
+  author: z.string().min(1),
+  baseBranch: z.string().min(1),
+  headBranch: z.string().min(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+const pullRequestsResponseSchema = z.object({
+  pullRequests: z.array(pullRequestItemSchema),
+});
+
 const workflowRunItemSchema = z.object({
   id: z.string().min(1),
   workflowId: z.string().min(1),
@@ -156,6 +173,7 @@ export type MonitoredRepository = z.infer<typeof monitoredRepositorySchema>;
 export type RepositoryDiscoveryItem = z.infer<typeof repositoryDiscoveryItemSchema>;
 export type CreateRepositoryInput = z.infer<typeof createRepositoryInputSchema>;
 export type WorkflowCatalogItem = z.infer<typeof workflowCatalogItemSchema>;
+export type PullRequestItem = z.infer<typeof pullRequestItemSchema>;
 export type WorkflowRunItem = z.infer<typeof workflowRunItemSchema>;
 export type WorkflowRunJobItem = z.infer<typeof workflowRunJobItemSchema>;
 export type WorkflowRunDetailResponse = z.infer<typeof workflowRunDetailResponseSchema>;
@@ -186,6 +204,7 @@ export interface ForgeOpsApiClient {
     accessToken: string,
     repositoryId: string,
   ): Promise<WorkflowCatalogItem[]>;
+  getPullRequests(accessToken: string, repositoryId: string): Promise<PullRequestItem[]>;
   getWorkflowRuns(
     accessToken: string,
     repositoryId: string,
@@ -282,6 +301,24 @@ export const createApiClient = (options: CreateApiClientOptions = {}): ForgeOpsA
       }
 
       return workflowCatalogResponseSchema.parse(await response.json()).workflows;
+    },
+
+    async getPullRequests(
+      accessToken: string,
+      repositoryId: string,
+    ): Promise<PullRequestItem[]> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/pull-requests`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(response, `Failed to fetch pull requests (${response.status})`);
+      }
+
+      return pullRequestsResponseSchema.parse(await response.json()).pullRequests;
     },
 
     async getWorkflowRuns(

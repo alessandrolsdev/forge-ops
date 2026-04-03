@@ -10,6 +10,7 @@ import {
   createApiClient,
   type ForgeOpsApiClient,
   type MonitoredRepository,
+  type PullRequestItem,
   type RepositoryDiscoveryItem,
   type WorkflowCatalogItem,
   type WorkflowRunDetailResponse,
@@ -20,6 +21,7 @@ const STORAGE_KEY = 'forgeops.operator-access-token';
 const EMPTY_MONITORED_REPOSITORIES: MonitoredRepository[] = [];
 const EMPTY_DISCOVERED_REPOSITORIES: RepositoryDiscoveryItem[] = [];
 const EMPTY_WORKFLOWS: WorkflowCatalogItem[] = [];
+const EMPTY_PULL_REQUESTS: PullRequestItem[] = [];
 const EMPTY_WORKFLOW_RUNS: WorkflowRunItem[] = [];
 const EMPTY_WORKFLOW_RUN_DETAIL_JOBS: WorkflowRunDetailResponse['jobs'] = [];
 
@@ -124,6 +126,15 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   });
 
   const repositoryWorkflows = workflowsQuery.data ?? EMPTY_WORKFLOWS;
+
+  const pullRequestsQuery = useQuery({
+    queryKey: ['pull-requests', accessToken, selectedRepositoryId],
+    queryFn: () => client.getPullRequests(accessToken, selectedRepositoryId!),
+    enabled: hasAccessToken && selectedRepositoryId !== null,
+    retry: false,
+  });
+
+  const pullRequests = pullRequestsQuery.data ?? EMPTY_PULL_REQUESTS;
 
   useEffect(() => {
     if (repositoryWorkflows.length === 0) {
@@ -274,6 +285,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
       queryKey: ['repository-workflows'],
     });
     void queryClient.removeQueries({
+      queryKey: ['pull-requests'],
+    });
+    void queryClient.removeQueries({
       queryKey: ['workflow-runs'],
     });
     void queryClient.removeQueries({
@@ -419,6 +433,69 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
           )}
         </Card>
       </div>
+
+      <Card
+        eyebrow="Pull requests"
+        title={
+          selectedRepository
+            ? `Pull requests for ${selectedRepository.fullName}`
+            : 'Pull requests'
+        }
+      >
+        {!hasAccessToken ? (
+          <p className="empty-state">
+            Add an operator token to inspect pull requests for monitored repositories.
+          </p>
+        ) : monitoredRepositoriesQuery.isLoading ? (
+          <p className="empty-state">Loading repositories before fetching pull requests...</p>
+        ) : monitoredRepositories.length === 0 ? (
+          <p className="empty-state">
+            Connect a repository first so ForgeOps can show pull requests.
+          </p>
+        ) : !selectedRepository ? (
+          <p className="empty-state">
+            Select a monitored repository to inspect pull requests.
+          </p>
+        ) : pullRequestsQuery.isLoading ? (
+          <p className="empty-state">Loading pull requests...</p>
+        ) : pullRequestsQuery.isError ? (
+          <p className="empty-state">
+            {getErrorMessage(pullRequestsQuery.error, 'Unable to load pull requests.')}
+          </p>
+        ) : pullRequests.length === 0 ? (
+          <p className="empty-state">
+            ForgeOps has not synchronized pull requests for this repository yet.
+          </p>
+        ) : (
+          <ul className="workflow-runs-list">
+            {pullRequests.map((pullRequest) => (
+              <li key={pullRequest.id} className="workflow-runs-list__item">
+                <div className="workflow-runs-list__summary">
+                  <strong>PR #{pullRequest.number}</strong>
+                  <span>{pullRequest.title}</span>
+                </div>
+                <div className="workflow-runs-list__meta">
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    state: {pullRequest.state}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    author: {pullRequest.author}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    base: {pullRequest.baseBranch}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    head: {pullRequest.headBranch}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    updated: {formatTimestamp(pullRequest.updatedAt)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card
         eyebrow="Workflow catalog"
