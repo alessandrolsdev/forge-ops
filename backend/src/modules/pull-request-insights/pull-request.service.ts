@@ -3,9 +3,17 @@ import { ApplicationError } from '../../shared/errors/application-error.js';
 import type { GitHubAppBoundary } from '../github/github-app.boundary.js';
 import { RepositoryNotFoundError } from '../repository-registry/repository.errors.js';
 import type { RepositoryRepository } from '../repository-registry/repository.repository.js';
+import type { CodexReviewSummaryRepository } from './codex-review-summary.repository.js';
 import type { PullRequest } from './pull-request.entity.js';
+import { PullRequestNotFoundError } from './pull-request.errors.js';
 import type { PullRequestRepository } from './pull-request.repository.js';
 import type { CodexReviewSummaryService } from './codex-review-summary.service.js';
+import type { WorkflowRepository } from '../workflow-catalog/workflow.repository.js';
+import type { WorkflowRunRepository } from '../workflow-runs/workflow-run.repository.js';
+import type {
+  WorkflowExecutionConclusion,
+  WorkflowExecutionStatus,
+} from '../workflow-runs/workflow-run.entity.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 
@@ -18,11 +26,35 @@ export interface PullRequestServiceOptions {
   repositoryRegistryRepository: RepositoryRepository;
   pullRequestRepository: PullRequestRepository;
   githubBoundary: GitHubAppBoundary;
+  workflowRepository?: WorkflowRepository;
+  workflowRunRepository?: WorkflowRunRepository;
+  codexReviewSummaryRepository?: CodexReviewSummaryRepository;
   codexReviewSummaryService?: Pick<
     CodexReviewSummaryService,
     'syncByPullRequest'
   >;
   logger?: ServiceLogger;
+}
+
+export interface PullRequestDetail {
+  id: string;
+  number: number;
+  title: string;
+  status: PullRequest['state'];
+  author: string;
+  summary: {
+    blockersCount: number;
+    risksCount: number;
+    suggestionsCount: number;
+    lastReviewedAt: Date;
+  } | null;
+  workflows: Array<{
+    name: string;
+    status: WorkflowExecutionStatus;
+    conclusion: WorkflowExecutionConclusion | null;
+    startedAt: Date | null;
+    finishedAt: Date | null;
+  }>;
 }
 
 export class PullRequestService {
@@ -37,6 +69,92 @@ export class PullRequestService {
     }
 
     return this.options.pullRequestRepository.listByRepositoryId(repositoryId);
+  }
+
+  async getDetailById(
+    repositoryId: string,
+    pullRequestId: string,
+  ): Promise<PullRequestDetail> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
+    const pullRequest = await this.options.pullRequestRepository.findById(
+      pullRequestId,
+    );
+
+    if (!pullRequest || pullRequest.repositoryId !== repositoryId) {
+      throw new PullRequestNotFoundError();
+    }
+
+    if (
+      !this.options.workflowRepository ||
+      !this.options.workflowRunRepository ||
+      !this.options.codexReviewSummaryRepository
+    ) {
+      throw new Error('Pull request detail dependencies are not configured.');
+    }
+
+    const [summary, workflows] = await Promise.all([
+      this.options.codexReviewSummaryRepository.findByPullRequestId(
+        pullRequest.id,
+      ),
+      this.options.workflowRepository.listByRepositoryId(repositoryId),
+    ]);
+
+    const workflowRuns = await Promise.all(
+      workflows.map(async (workflow) => {
+        const runs = await this.options.workflowRunRepository!.listRunsByWorkflowId(
+          workflow.id,
+        );
+
+        return runs
+          .filter(
+            (run) =>
+              run.branch === pullRequest.headBranch &&
+              run.createdAt.getTime() >= pullRequest.createdAt.getTime(),
+          )
+          .map((run) => ({
+            name: workflow.name,
+            status: run.status,
+            conclusion: run.conclusion,
+            startedAt: run.startedAt,
+            finishedAt: run.finishedAt,
+            sortTime:
+              run.startedAt?.getTime() ??
+              run.createdAt.getTime(),
+          }));
+      }),
+    );
+
+    return {
+      id: pullRequest.id,
+      number: pullRequest.number,
+      title: pullRequest.title,
+      status: pullRequest.state,
+      author: pullRequest.author,
+      summary: summary
+        ? {
+            blockersCount: summary.blockersCount,
+            risksCount: summary.risksCount,
+            suggestionsCount: summary.suggestionsCount,
+            lastReviewedAt: summary.updatedAt,
+          }
+        : null,
+      workflows: workflowRuns
+        .flat()
+        .sort((left, right) => right.sortTime - left.sortTime)
+        .map((workflow) => ({
+          name: workflow.name,
+          status: workflow.status,
+          conclusion: workflow.conclusion,
+          startedAt: workflow.startedAt,
+          finishedAt: workflow.finishedAt,
+        })),
+    };
   }
 
   async syncByRepositoryId(repositoryId: string): Promise<PullRequest[]> {
