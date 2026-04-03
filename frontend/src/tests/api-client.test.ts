@@ -281,6 +281,63 @@ describe('createApiClient', () => {
     );
   });
 
+  it('should fetch pull requests with operator authorization', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          pullRequests: [
+            {
+              id: 'pr_123',
+              githubPrId: '987654321',
+              number: 42,
+              title: 'Add pull request insights',
+              state: 'open',
+              author: 'alessandrolsdev',
+              baseBranch: 'main',
+              headBranch: 'feature/pull-request-insights',
+              createdAt: '2026-03-31T18:20:00.000Z',
+              updatedAt: '2026-03-31T18:20:00.000Z',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'http://localhost:3333',
+      fetcher,
+    });
+
+    await expect(client.getPullRequests('trusted-token', 'repo_123')).resolves.toEqual([
+      {
+        id: 'pr_123',
+        githubPrId: '987654321',
+        number: 42,
+        title: 'Add pull request insights',
+        state: 'open',
+        author: 'alessandrolsdev',
+        baseBranch: 'main',
+        headBranch: 'feature/pull-request-insights',
+        createdAt: '2026-03-31T18:20:00.000Z',
+        updatedAt: '2026-03-31T18:20:00.000Z',
+      },
+    ]);
+    expect(fetcher).toHaveBeenCalledWith(
+      'http://localhost:3333/api/v1/repositories/repo_123/pull-requests',
+      {
+        headers: {
+          accept: 'application/json',
+          authorization: 'Bearer trusted-token',
+        },
+      },
+    );
+  });
+
   it('should fetch workflow run detail with jobs', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
