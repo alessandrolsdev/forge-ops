@@ -109,6 +109,9 @@ export const createServer = (options: CreateServerOptions) => {
     repositoryRegistryRepository,
     pullRequestRepository,
     githubBoundary,
+    workflowRepository: workflowCatalogRepository,
+    workflowRunRepository,
+    codexReviewSummaryRepository,
     codexReviewSummaryService: new CodexReviewSummaryService({
       repositoryRegistryRepository,
       pullRequestRepository,

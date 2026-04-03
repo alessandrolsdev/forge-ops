@@ -2,10 +2,18 @@ import type { RouteGenericInterface } from 'fastify';
 import { z } from 'zod';
 import type { ForgeOpsFastifyInstance } from '../../app/register-routes.js';
 import type { PullRequest } from './pull-request.entity.js';
-import type { PullRequestService } from './pull-request.service.js';
+import type {
+  PullRequestDetail,
+  PullRequestService,
+} from './pull-request.service.js';
 
 const pullRequestParamsSchema = z.object({
   repositoryId: z.string().trim().min(1),
+});
+
+const pullRequestDetailParamsSchema = z.object({
+  repositoryId: z.string().trim().min(1),
+  pullRequestId: z.string().trim().min(1),
 });
 
 interface PullRequestResponse {
@@ -21,6 +29,43 @@ interface PullRequestResponse {
   updatedAt: string;
 }
 
+interface PullRequestDetailResponse {
+  id: string;
+  number: number;
+  title: string;
+  status: 'open' | 'closed' | 'merged';
+  author: string;
+  summary: {
+    blockersCount: number;
+    risksCount: number;
+    suggestionsCount: number;
+    lastReviewedAt: string;
+  } | null;
+  workflows: Array<{
+    name: string;
+    status:
+      | 'queued'
+      | 'in_progress'
+      | 'completed'
+      | 'pending'
+      | 'waiting'
+      | 'requested';
+    conclusion:
+      | 'success'
+      | 'failure'
+      | 'neutral'
+      | 'cancelled'
+      | 'skipped'
+      | 'timed_out'
+      | 'action_required'
+      | 'stale'
+      | 'startup_failure'
+      | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+  }>;
+}
+
 interface ListPullRequestsRoute extends RouteGenericInterface {
   Params: {
     repositoryId: string;
@@ -28,6 +73,14 @@ interface ListPullRequestsRoute extends RouteGenericInterface {
   Reply: {
     pullRequests: PullRequestResponse[];
   };
+}
+
+interface GetPullRequestDetailRoute extends RouteGenericInterface {
+  Params: {
+    repositoryId: string;
+    pullRequestId: string;
+  };
+  Reply: PullRequestDetailResponse;
 }
 
 const toPullRequestResponse = (pullRequest: PullRequest): PullRequestResponse => {
@@ -42,6 +95,33 @@ const toPullRequestResponse = (pullRequest: PullRequest): PullRequestResponse =>
     headBranch: pullRequest.headBranch,
     createdAt: pullRequest.createdAt.toISOString(),
     updatedAt: pullRequest.updatedAt.toISOString(),
+  };
+};
+
+const toPullRequestDetailResponse = (
+  detail: PullRequestDetail,
+): PullRequestDetailResponse => {
+  return {
+    id: detail.id,
+    number: detail.number,
+    title: detail.title,
+    status: detail.status,
+    author: detail.author,
+    summary: detail.summary
+      ? {
+          blockersCount: detail.summary.blockersCount,
+          risksCount: detail.summary.risksCount,
+          suggestionsCount: detail.summary.suggestionsCount,
+          lastReviewedAt: detail.summary.lastReviewedAt.toISOString(),
+        }
+      : null,
+    workflows: detail.workflows.map((workflow) => ({
+      name: workflow.name,
+      status: workflow.status,
+      conclusion: workflow.conclusion,
+      startedAt: workflow.startedAt?.toISOString() ?? null,
+      finishedAt: workflow.finishedAt?.toISOString() ?? null,
+    })),
   };
 };
 
@@ -63,6 +143,26 @@ export const registerPullRequestRoutes = (
       return {
         pullRequests: pullRequests.map(toPullRequestResponse),
       };
+    },
+  );
+
+  app.get<GetPullRequestDetailRoute>(
+    '/api/v1/repositories/:repositoryId/pull-requests/:pullRequestId',
+    {
+      config: {
+        access: 'protected',
+      },
+    },
+    async (request) => {
+      const { repositoryId, pullRequestId } = pullRequestDetailParamsSchema.parse(
+        request.params,
+      );
+      const detail = await pullRequestService.getDetailById(
+        repositoryId,
+        pullRequestId,
+      );
+
+      return toPullRequestDetailResponse(detail);
     },
   );
 };
