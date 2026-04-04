@@ -338,6 +338,79 @@ describe('createApiClient', () => {
     );
   });
 
+  it('should fetch pull request detail with summary and workflows', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'pr_123',
+          number: 42,
+          title: 'Add pull request insights',
+          status: 'open',
+          author: 'alessandrolsdev',
+          summary: {
+            blockersCount: 1,
+            risksCount: 2,
+            suggestionsCount: 1,
+            lastReviewedAt: '2026-03-31T18:50:00.000Z',
+          },
+          workflows: [
+            {
+              name: 'Deploy',
+              status: 'in_progress',
+              conclusion: null,
+              startedAt: '2026-03-31T19:00:00.000Z',
+              finishedAt: null,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'http://localhost:3333',
+      fetcher,
+    });
+
+    await expect(
+      client.getPullRequestDetail('trusted-token', 'repo_123', 'pr_123'),
+    ).resolves.toEqual({
+      id: 'pr_123',
+      number: 42,
+      title: 'Add pull request insights',
+      status: 'open',
+      author: 'alessandrolsdev',
+      summary: {
+        blockersCount: 1,
+        risksCount: 2,
+        suggestionsCount: 1,
+        lastReviewedAt: '2026-03-31T18:50:00.000Z',
+      },
+      workflows: [
+        {
+          name: 'Deploy',
+          status: 'in_progress',
+          conclusion: null,
+          startedAt: '2026-03-31T19:00:00.000Z',
+          finishedAt: null,
+        },
+      ],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      'http://localhost:3333/api/v1/repositories/repo_123/pull-requests/pr_123',
+      {
+        headers: {
+          accept: 'application/json',
+          authorization: 'Bearer trusted-token',
+        },
+      },
+    );
+  });
+
   it('should fetch workflow run detail with jobs', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

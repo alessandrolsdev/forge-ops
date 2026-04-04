@@ -10,6 +10,7 @@ import {
   createApiClient,
   type ForgeOpsApiClient,
   type MonitoredRepository,
+  type PullRequestDetailResponse,
   type PullRequestItem,
   type RepositoryDiscoveryItem,
   type WorkflowCatalogItem,
@@ -22,6 +23,7 @@ const EMPTY_MONITORED_REPOSITORIES: MonitoredRepository[] = [];
 const EMPTY_DISCOVERED_REPOSITORIES: RepositoryDiscoveryItem[] = [];
 const EMPTY_WORKFLOWS: WorkflowCatalogItem[] = [];
 const EMPTY_PULL_REQUESTS: PullRequestItem[] = [];
+const EMPTY_PULL_REQUEST_WORKFLOWS: PullRequestDetailResponse['workflows'] = [];
 const EMPTY_WORKFLOW_RUNS: WorkflowRunItem[] = [];
 const EMPTY_WORKFLOW_RUN_DETAIL_JOBS: WorkflowRunDetailResponse['jobs'] = [];
 
@@ -66,6 +68,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   const [draftAccessToken, setDraftAccessToken] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>(null);
+  const [selectedPullRequestId, setSelectedPullRequestId] = useState<string | null>(null);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [selectedWorkflowRunId, setSelectedWorkflowRunId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -135,6 +138,33 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   });
 
   const pullRequests = pullRequestsQuery.data ?? EMPTY_PULL_REQUESTS;
+
+  useEffect(() => {
+    if (pullRequests.length === 0) {
+      setSelectedPullRequestId(null);
+      return;
+    }
+
+    const selectedExists = pullRequests.some(
+      (pullRequest) => pullRequest.id === selectedPullRequestId,
+    );
+    const firstPullRequest = pullRequests[0];
+
+    if (!selectedPullRequestId || !selectedExists) {
+      setSelectedPullRequestId(firstPullRequest?.id ?? null);
+    }
+  }, [pullRequests, selectedPullRequestId]);
+
+  const pullRequestDetailQuery = useQuery({
+    queryKey: ['pull-request-detail', accessToken, selectedRepositoryId, selectedPullRequestId],
+    queryFn: () =>
+      client.getPullRequestDetail(accessToken, selectedRepositoryId!, selectedPullRequestId!),
+    enabled:
+      hasAccessToken &&
+      selectedRepositoryId !== null &&
+      selectedPullRequestId !== null,
+    retry: false,
+  });
 
   useEffect(() => {
     if (repositoryWorkflows.length === 0) {
@@ -223,6 +253,12 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
           queryKey: ['repository-workflows', accessToken, repository.id],
         }),
         queryClient.invalidateQueries({
+          queryKey: ['pull-requests', accessToken, repository.id],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['pull-request-detail', accessToken, repository.id],
+        }),
+        queryClient.invalidateQueries({
           queryKey: ['workflow-runs', accessToken, repository.id],
         }),
         queryClient.invalidateQueries({
@@ -246,10 +282,13 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
   );
   const selectedRepository =
     monitoredRepositories.find((repository) => repository.id === selectedRepositoryId) ?? null;
+  const selectedPullRequest =
+    pullRequests.find((pullRequest) => pullRequest.id === selectedPullRequestId) ?? null;
   const selectedWorkflow =
     repositoryWorkflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null;
   const selectedWorkflowRun =
     workflowRuns.find((workflowRun) => workflowRun.id === selectedWorkflowRunId) ?? null;
+  const pullRequestDetail = pullRequestDetailQuery.data;
   const workflowRunDetail = workflowRunDetailQuery.data;
 
   const submitAccessToken = () => {
@@ -271,6 +310,7 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     setDraftAccessToken('');
     setAccessToken('');
     setSelectedRepositoryId(null);
+    setSelectedPullRequestId(null);
     setSelectedWorkflowId(null);
     setSelectedWorkflowRunId(null);
     setTokenError(null);
@@ -286,6 +326,9 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     });
     void queryClient.removeQueries({
       queryKey: ['pull-requests'],
+    });
+    void queryClient.removeQueries({
+      queryKey: ['pull-request-detail'],
     });
     void queryClient.removeQueries({
       queryKey: ['workflow-runs'],
@@ -491,9 +534,122 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
                     updated: {formatTimestamp(pullRequest.updatedAt)}
                   </span>
                 </div>
+                <div className="workflow-runs-list__actions">
+                  <Button
+                    variant={pullRequest.id === selectedPullRequestId ? 'secondary' : 'primary'}
+                    onClick={() => setSelectedPullRequestId(pullRequest.id)}
+                  >
+                    {pullRequest.id === selectedPullRequestId
+                      ? 'Viewing pull request detail'
+                      : 'View pull request detail'}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
+        )}
+      </Card>
+
+      <Card
+        eyebrow="Pull request detail"
+        title={selectedPullRequest ? `PR #${selectedPullRequest.number}` : 'Pull request detail'}
+      >
+        {!hasAccessToken ? (
+          <p className="empty-state">
+            Add an operator token to inspect pull request details.
+          </p>
+        ) : !selectedRepository ? (
+          <p className="empty-state">Select a repository to inspect pull request details.</p>
+        ) : pullRequestsQuery.isLoading ? (
+          <p className="empty-state">Loading pull requests before showing detail...</p>
+        ) : pullRequestsQuery.isError ? (
+          <p className="empty-state">
+            {getErrorMessage(pullRequestsQuery.error, 'Unable to load pull requests.')}
+          </p>
+        ) : pullRequests.length === 0 ? (
+          <p className="empty-state">No pull requests are available yet for this repository.</p>
+        ) : !selectedPullRequest ? (
+          <p className="empty-state">Select a pull request to load detail.</p>
+        ) : pullRequestDetailQuery.isLoading ? (
+          <p className="empty-state">Loading pull request detail...</p>
+        ) : pullRequestDetailQuery.isError ? (
+          <p className="empty-state">
+            {getErrorMessage(
+              pullRequestDetailQuery.error,
+              'Unable to load pull request detail.',
+            )}
+          </p>
+        ) : !pullRequestDetail ? (
+          <p className="empty-state">Pull request detail is unavailable.</p>
+        ) : (
+          <div className="workflow-run-detail">
+            <div className="workflow-runs-list__meta">
+              <span className="repository-list__badge repository-list__badge--neutral">
+                status: {pullRequestDetail.status}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                author: {pullRequestDetail.author}
+              </span>
+              <span className="repository-list__badge repository-list__badge--neutral">
+                title: {pullRequestDetail.title}
+              </span>
+            </div>
+
+            {pullRequestDetail.summary ? (
+              <div className="workflow-runs-list__meta">
+                <span className="repository-list__badge repository-list__badge--neutral">
+                  blockers: {pullRequestDetail.summary.blockersCount}
+                </span>
+                <span className="repository-list__badge repository-list__badge--neutral">
+                  risks: {pullRequestDetail.summary.risksCount}
+                </span>
+                <span className="repository-list__badge repository-list__badge--neutral">
+                  suggestions: {pullRequestDetail.summary.suggestionsCount}
+                </span>
+                <span className="repository-list__badge repository-list__badge--neutral">
+                  reviewed: {formatTimestamp(pullRequestDetail.summary.lastReviewedAt)}
+                </span>
+              </div>
+            ) : (
+              <p className="empty-state">
+                No Codex review summary is available for this pull request yet.
+              </p>
+            )}
+
+            {pullRequestDetail.workflows.length === 0 ? (
+              <p className="empty-state">
+                No linked workflow runs were found for this pull request.
+              </p>
+            ) : (
+              <ul className="workflow-runs-list">
+                {(pullRequestDetail.workflows ?? EMPTY_PULL_REQUEST_WORKFLOWS).map((workflow) => (
+                  <li
+                    key={`${workflow.name}-${workflow.startedAt ?? workflow.finishedAt ?? workflow.status}`}
+                    className="workflow-runs-list__item"
+                  >
+                    <div className="workflow-runs-list__summary">
+                      <strong>{workflow.name}</strong>
+                      <span>{workflow.conclusion ?? 'in progress'}</span>
+                    </div>
+                    <div className="workflow-runs-list__meta">
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        status: {workflow.status}
+                      </span>
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        conclusion: {workflow.conclusion ?? 'n/a'}
+                      </span>
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        started: {formatTimestamp(workflow.startedAt)}
+                      </span>
+                      <span className="repository-list__badge repository-list__badge--neutral">
+                        finished: {formatTimestamp(workflow.finishedAt)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </Card>
 
