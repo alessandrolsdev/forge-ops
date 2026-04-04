@@ -1,11 +1,20 @@
 entryPoints:
   web:
     address: ":80"
+  traefik:
+    address: ":8080"
 
 providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
+
+api:
+  insecure: true
+  dashboard: false
+
+ping:
+  entryPoint: traefik
 
 log:
   level: INFO

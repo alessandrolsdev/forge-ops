@@ -37,7 +37,7 @@ forge-ops/
 |   |-- workflows/              # GitHub Actions CI
 |   `-- ISSUE_TEMPLATE/         # Templates de issue
 |-- scripts/                    # Scripts utilitarios do workspace
-|-- docker-compose.yml          # PostgreSQL 17 + Redis 7.4
+|-- docker-compose.yml          # Stack local com Traefik, frontend, backend, PostgreSQL e Redis
 |-- turbo.json                  # Pipeline Turborepo
 |-- pnpm-workspace.yaml
 |-- package.json                # Root workspace
@@ -216,14 +216,23 @@ app/[rota]/page.tsx
 
 ## Infraestrutura e DevOps
 
-### Docker Compose
+### Docker Compose e proxy local
 
-| Servico | Imagem | Porta | Persistencia |
+| Servico | Imagem | Exposicao externa | Persistencia |
 |---|---|---|---|
-| `postgres` | `postgres:17-alpine` | 5432 | volume `postgres_data` |
-| `redis` | `redis:7.4-alpine` | 6379 | volume `redis_data` |
+| `proxy` | `traefik:v3.4` | porta unica do ambiente local | config bind-mounted |
+| `frontend` | build local | apenas via Traefik | volumes de workspace |
+| `backend` | build local | apenas via Traefik | volumes de workspace |
+| `postgres` | `postgres:17-alpine` | nenhuma | volume `postgres_data` |
+| `redis` | `redis:7.4-alpine` | nenhuma | volume `redis_data` |
 
-> O frontend e o backend continuam rodando localmente via `pnpm dev`, fora do `docker-compose`.
+Padrao operacional atual:
+- `file provider` do Traefik e o caminho estavel do ambiente local
+- `docker provider` existe apenas como trilha experimental sob feature flag
+- o fallback para `file provider` e intencionalmente preservado para evitar quebra em Docker Desktop / WSL2
+
+Documentacao relacionada:
+- [Local Dev Proxy](local-dev-proxy.md)
 
 ### GitHub Actions
 
