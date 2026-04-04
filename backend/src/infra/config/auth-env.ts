@@ -2,13 +2,38 @@ import { z } from 'zod';
 
 const operatorAuthModeSchema = z.enum(['jwks', 'shared-secret']);
 
+const optionalEnvString = () =>
+  z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.trim().length === 0 ? undefined : value,
+    z.string().trim().min(1).optional(),
+  );
+
+const optionalEnvEnum = <TValues extends [string, ...string[]]>(values: TValues) =>
+  z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.trim().length === 0 ? undefined : value,
+    z.enum(values).optional(),
+  );
+
+const optionalEnvUrl = () =>
+  z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.trim().length === 0 ? undefined : value,
+    z.string().trim().url().optional(),
+  );
+
 const rawOperatorAuthEnvSchema = z.object({
-  OPERATOR_AUTH_ENABLED: z.enum(['true', 'false']).optional(),
-  OPERATOR_AUTH_ISSUER: z.string().trim().min(1).optional(),
-  OPERATOR_AUTH_AUDIENCE: z.string().trim().min(1).optional(),
-  OPERATOR_AUTH_MODE: operatorAuthModeSchema.optional(),
-  OPERATOR_AUTH_JWKS_URL: z.string().trim().url().optional(),
-  OPERATOR_AUTH_SHARED_SECRET: z.string().trim().min(1).optional(),
+  OPERATOR_AUTH_ENABLED: optionalEnvEnum(['true', 'false']),
+  OPERATOR_AUTH_ISSUER: optionalEnvString(),
+  OPERATOR_AUTH_AUDIENCE: optionalEnvString(),
+  OPERATOR_AUTH_MODE: z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.trim().length === 0 ? undefined : value,
+    operatorAuthModeSchema.optional(),
+  ),
+  OPERATOR_AUTH_JWKS_URL: optionalEnvUrl(),
+  OPERATOR_AUTH_SHARED_SECRET: optionalEnvString(),
 });
 
 const enabledOperatorAuthEnvSchema = z

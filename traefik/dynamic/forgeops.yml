@@ -1,0 +1,24 @@
+http:
+  routers:
+    forgeops-frontend:
+      entryPoints:
+        - web
+      rule: Host(`forgeops.local`)
+      service: forgeops-frontend
+
+    forgeops-backend:
+      entryPoints:
+        - web
+      rule: Host(`api.forgeops.local`)
+      service: forgeops-backend
+
+  services:
+    forgeops-frontend:
+      loadBalancer:
+        servers:
+          - url: http://frontend:3000
+
+    forgeops-backend:
+      loadBalancer:
+        servers:
+          - url: http://backend:3333
