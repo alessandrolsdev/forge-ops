@@ -8,6 +8,16 @@ describe('auth env', () => {
   it('should return null when operator auth is disabled', () => {
     expect(loadOptionalOperatorAuthEnv({})).toBeNull();
     expect(loadOptionalOperatorAuthEnv({ OPERATOR_AUTH_ENABLED: 'false' })).toBeNull();
+    expect(
+      loadOptionalOperatorAuthEnv({
+        OPERATOR_AUTH_ENABLED: '',
+        OPERATOR_AUTH_ISSUER: '',
+        OPERATOR_AUTH_AUDIENCE: '',
+        OPERATOR_AUTH_MODE: '',
+        OPERATOR_AUTH_JWKS_URL: '',
+        OPERATOR_AUTH_SHARED_SECRET: '',
+      }),
+    ).toBeNull();
   });
 
   it('should parse a jwks-based operator auth config', () => {
