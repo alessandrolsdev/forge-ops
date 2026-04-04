@@ -89,17 +89,7 @@ Documentacao detalhada:
 pnpm install
 ```
 
-### 2. Subir dependencias locais
-
-```bash
-docker compose up -d
-```
-
-Isso sobe:
-- PostgreSQL em `localhost:5432`
-- Redis em `localhost:6379`
-
-### 3. Configurar ambiente
+### 2. Configurar ambiente
 
 Use `.env.example` como base:
 
@@ -108,6 +98,7 @@ cp .env.example .env
 ```
 
 Variaveis locais principais:
+- `FORGEOPS_PROXY_PORT`
 - `PORT`
 - `DATABASE_URL`
 - `REDIS_URL`
@@ -117,21 +108,56 @@ Variaveis locais principais:
 - `GITHUB_APP_PRIVATE_KEY`
 - `GITHUB_APP_WEBHOOK_SECRET`
 
-### 4. Preparar Prisma
+No modo Docker, `docker-compose.yml` sobrescreve `DATABASE_URL`, `REDIS_URL` e `NEXT_PUBLIC_API_BASE_URL` para usar service discovery e os dominios locais. O `.env` continua servindo como modo legado para execucao direta fora de containers.
+
+### 3. Configurar hosts locais
+
+Adicione estas entradas no arquivo de hosts do sistema operacional:
+
+```text
+127.0.0.1 forgeops.local
+127.0.0.1 api.forgeops.local
+```
+
+No Windows, o arquivo fica em:
+
+```text
+C:\Windows\System32\drivers\etc\hosts
+```
+
+### 4. Subir ambiente containerizado
+
+Fluxo recomendado:
+
+```bash
+docker compose up --build
+```
+
+Servicos esperados:
+- frontend: `http://forgeops.local`
+- backend: `http://api.forgeops.local`
+- proxy reverso: porta `80` apenas
+
+PostgreSQL e Redis permanecem acessiveis apenas na rede Docker durante o uso normal da aplicacao.
+
+Se a porta `80` ja estiver ocupada por outra stack local, ajuste apenas `FORGEOPS_PROXY_PORT` no `.env`. O roteamento continua o mesmo; muda apenas a porta publicada pelo proxy.
+
+### 5. Rodar o monorepo sem Docker
+
+```bash
+docker compose up -d postgres redis
+pnpm dev
+```
+
+Nesse modo legado, os servicos esperados continuam:
+- frontend: `http://localhost:3000`
+- backend: `http://localhost:3333`
+
+### 6. Preparar Prisma
 
 ```bash
 pnpm --filter @forgeops/backend prisma:generate
 ```
-
-### 5. Rodar o monorepo
-
-```bash
-pnpm dev
-```
-
-Servicos esperados:
-- frontend: `http://localhost:3000`
-- backend: `http://localhost:3333`
 
 ## Variaveis de ambiente para o workflow Codex Review
 

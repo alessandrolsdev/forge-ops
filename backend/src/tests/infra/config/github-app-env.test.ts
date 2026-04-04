@@ -7,6 +7,14 @@ import {
 describe('GitHub App env loaders', () => {
   it('should return null when no GitHub App variables are provided', () => {
     expect(loadOptionalGitHubAppEnv({})).toBeNull();
+    expect(
+      loadOptionalGitHubAppEnv({
+        GITHUB_APP_ID: '',
+        GITHUB_APP_INSTALLATION_ID: '',
+        GITHUB_APP_PRIVATE_KEY: '',
+        GITHUB_APP_WEBHOOK_SECRET: '',
+      }),
+    ).toBeNull();
   });
 
   it('should reject partially configured GitHub App values', () => {
