@@ -1,11 +1,18 @@
 import { z } from 'zod';
 
+const optionalEnvString = () =>
+  z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.trim().length === 0 ? undefined : value,
+    z.string().trim().min(1).optional(),
+  );
+
 const optionalGitHubAppEnvSchema = z
   .object({
-    GITHUB_APP_ID: z.string().trim().min(1).optional(),
-    GITHUB_APP_INSTALLATION_ID: z.string().trim().min(1).optional(),
-    GITHUB_APP_PRIVATE_KEY: z.string().trim().min(1).optional(),
-    GITHUB_APP_WEBHOOK_SECRET: z.string().trim().min(1).optional(),
+    GITHUB_APP_ID: optionalEnvString(),
+    GITHUB_APP_INSTALLATION_ID: optionalEnvString(),
+    GITHUB_APP_PRIVATE_KEY: optionalEnvString(),
+    GITHUB_APP_WEBHOOK_SECRET: optionalEnvString(),
   })
   .transform((value) => {
     const hasValues = Object.values(value).some((field) => field !== undefined);
