@@ -10,6 +10,7 @@ services:
     environment:
       TRAEFIK_DOCKER_PROVIDER_ENABLED: ${TRAEFIK_DOCKER_PROVIDER_ENABLED:-false}
       TRAEFIK_DOCKER_PROVIDER_ENDPOINT: ${TRAEFIK_DOCKER_PROVIDER_ENDPOINT:-unix:///var/run/docker.sock}
+      TRAEFIK_DOCKER_PROVIDER_NETWORK: ${TRAEFIK_DOCKER_PROVIDER_NETWORK:-forgeops}
       TRAEFIK_PROVIDER_OBSERVER_INTERVAL_SECONDS: ${TRAEFIK_PROVIDER_OBSERVER_INTERVAL_SECONDS:-30}
     ports:
       - '${FORGEOPS_PROXY_PORT:-80}:80'
@@ -54,7 +55,7 @@ services:
       - frontend_node_modules:/workspace/frontend/node_modules
     labels:
       - 'traefik.enable=${TRAEFIK_DOCKER_PROVIDER_ENABLED:-false}'
-      - 'traefik.docker.network=forgeops'
+      - 'traefik.docker.network=${TRAEFIK_DOCKER_PROVIDER_NETWORK:-forgeops}'
       - 'traefik.http.routers.forgeops-frontend-docker.rule=Host(`docker-frontend.forgeops.local`)'
       - 'traefik.http.routers.forgeops-frontend-docker.entrypoints=web'
       - 'traefik.http.routers.forgeops-frontend-docker.service=forgeops-frontend-docker'
@@ -104,7 +105,7 @@ services:
       - backend_node_modules:/workspace/backend/node_modules
     labels:
       - 'traefik.enable=${TRAEFIK_DOCKER_PROVIDER_ENABLED:-false}'
-      - 'traefik.docker.network=forgeops'
+      - 'traefik.docker.network=${TRAEFIK_DOCKER_PROVIDER_NETWORK:-forgeops}'
       - 'traefik.http.routers.forgeops-backend-docker.rule=Host(`docker-api.forgeops.local`)'
       - 'traefik.http.routers.forgeops-backend-docker.entrypoints=web'
       - 'traefik.http.routers.forgeops-backend-docker.service=forgeops-backend-docker'
