@@ -2,28 +2,41 @@
 
 set -eu
 
-json_escape() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
-}
-
 log_json() {
   level="$1"
   event="$2"
   message="$3"
-  details="${4:-}"
-  timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  degraded_reason="${4:-}"
 
-  printf '{"level":"%s","service":"forgeops-proxy","timestamp":"%s","event":"%s","message":"%s"' \
-    "$(json_escape "$level")" \
-    "$(json_escape "$timestamp")" \
-    "$(json_escape "$event")" \
-    "$(json_escape "$message")"
-
-  if [ -n "$details" ]; then
-    printf ',"details":"%s"' "$(json_escape "$details")"
-  fi
-
-  printf '}\n'
+  jq -nc \
+    --arg level "$level" \
+    --arg event "$event" \
+    --arg message "$message" \
+    --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    --arg traefik_version "${TRAEFIK_VERSION:-unknown}" \
+    --arg docker_version "${DOCKER_VERSION:-unknown}" \
+    --arg docker_api_version "${DOCKER_API_VERSION:-unknown}" \
+    --arg docker_endpoint "${DOCKER_PROVIDER_ENDPOINT:-unknown}" \
+    --arg provider_network "${DOCKER_PROVIDER_NETWORK:-unknown}" \
+    --arg docker_provider_enabled "${DOCKER_PROVIDER_ENABLED:-false}" \
+    --arg docker_provider_active "${DOCKER_PROVIDER_ACTIVE:-false}" \
+    --arg degraded_reason "$degraded_reason" \
+    '{
+      level: $level,
+      service: "forgeops-proxy",
+      timestamp: $timestamp,
+      event: $event,
+      message: $message,
+      docker_provider_enabled: ($docker_provider_enabled == "true"),
+      docker_provider_active: ($docker_provider_active == "true"),
+      docker_endpoint: $docker_endpoint,
+      docker_api_version: $docker_api_version,
+      docker_version: $docker_version,
+      traefik_version: $traefik_version,
+      provider_network: $provider_network,
+      providers_docker_exposed_by_default: false,
+      degraded_reason: (if $degraded_reason == "" then null else $degraded_reason end)
+    }'
 }
 
 normalize_bool() {
@@ -78,6 +91,7 @@ json_field_from_body() {
 
 DOCKER_PROVIDER_ENABLED="$(normalize_bool "${TRAEFIK_DOCKER_PROVIDER_ENABLED:-false}")"
 DOCKER_PROVIDER_ENDPOINT="${TRAEFIK_DOCKER_PROVIDER_ENDPOINT:-unix:///var/run/docker.sock}"
+DOCKER_PROVIDER_NETWORK="${TRAEFIK_DOCKER_PROVIDER_NETWORK:-forgeops}"
 DOCKER_SOCKET_PATH="$(extract_unix_socket_path "$DOCKER_PROVIDER_ENDPOINT")"
 DOCKER_PROVIDER_ACTIVE='false'
 DOCKER_PROVIDER_REASON='docker_provider_disabled_by_flag'
@@ -99,23 +113,23 @@ if [ "$DOCKER_PROVIDER_ENABLED" = 'true' ]; then
     DOCKER_PROVIDER_REASON='docker_endpoint_not_unix_socket'
     log_json 'warn' 'traefik_provider_fallback' \
       'Docker provider requested but endpoint is not a supported unix socket in local mode; keeping file provider only.' \
-      "endpoint=$DOCKER_PROVIDER_ENDPOINT traefik_version=$TRAEFIK_VERSION docker_version=$DOCKER_VERSION docker_api_version=$DOCKER_API_VERSION"
+      "$DOCKER_PROVIDER_REASON"
   elif [ ! -S "$DOCKER_SOCKET_PATH" ]; then
     DOCKER_PROVIDER_REASON='docker_socket_unavailable'
     log_json 'warn' 'traefik_provider_fallback' \
       'Docker provider requested but docker.sock is unavailable; keeping file provider only.' \
-      "socket_path=$DOCKER_SOCKET_PATH traefik_version=$TRAEFIK_VERSION docker_version=$DOCKER_VERSION docker_api_version=$DOCKER_API_VERSION"
+      "$DOCKER_PROVIDER_REASON"
   else
     DOCKER_PROVIDER_ACTIVE='true'
     DOCKER_PROVIDER_REASON='docker_provider_enabled'
     log_json 'info' 'traefik_provider_bootstrap' \
       'Starting Traefik with file provider and experimental docker provider enabled.' \
-      "endpoint=$DOCKER_PROVIDER_ENDPOINT socket_path=$DOCKER_SOCKET_PATH traefik_version=$TRAEFIK_VERSION docker_version=$DOCKER_VERSION docker_api_version=$DOCKER_API_VERSION"
+      "$DOCKER_PROVIDER_REASON"
   fi
 else
   log_json 'info' 'traefik_provider_bootstrap' \
     'Starting Traefik with file provider only.' \
-    "traefik_version=$TRAEFIK_VERSION docker_version=$DOCKER_VERSION docker_api_version=$DOCKER_API_VERSION"
+    "$DOCKER_PROVIDER_REASON"
 fi
 
 TRAEFIK_DOCKER_PROVIDER_ACTIVE="$DOCKER_PROVIDER_ACTIVE"
@@ -125,11 +139,13 @@ export TRAEFIK_DOCKER_PROVIDER_ENABLED="$DOCKER_PROVIDER_ENABLED"
 export TRAEFIK_DOCKER_PROVIDER_ACTIVE
 export TRAEFIK_DOCKER_PROVIDER_REASON
 export TRAEFIK_DOCKER_PROVIDER_ENDPOINT="$DOCKER_PROVIDER_ENDPOINT"
+export TRAEFIK_DOCKER_PROVIDER_NETWORK="$DOCKER_PROVIDER_NETWORK"
+export TRAEFIK_DOCKER_API_VERSION="$DOCKER_API_VERSION"
 
 TRAEFIK_ARGS="--configFile=/etc/traefik/traefik.yml"
 
 if [ "$DOCKER_PROVIDER_ACTIVE" = 'true' ]; then
-  TRAEFIK_ARGS="$TRAEFIK_ARGS --providers.docker=true --providers.docker.endpoint=$DOCKER_PROVIDER_ENDPOINT --providers.docker.exposedbydefault=false --providers.docker.network=forgeops"
+  TRAEFIK_ARGS="$TRAEFIK_ARGS --providers.docker=true --providers.docker.endpoint=$DOCKER_PROVIDER_ENDPOINT --providers.docker.exposedbydefault=false --providers.docker.network=$DOCKER_PROVIDER_NETWORK"
 else
   TRAEFIK_ARGS="$TRAEFIK_ARGS --providers.docker=false"
 fi
