@@ -47,15 +47,57 @@ O proxy registra logs estruturados com:
 - versao do Traefik
 - versao do Docker
 - versao da Docker API
+- endpoint Docker usado
+- network efetiva esperada pelo provider
 - estado do `docker.sock`
 - status do provider experimental
 - motivo do fallback, quando houver
+- quantidade de containers elegiveis
+- quantidade de containers com labels validas
+- containers com override divergente de `traefik.docker.network`
+- quantidade de routers `@docker`
+- quantidade de services `@docker`
 
 O observer do proxy classifica o estado como:
 - `file_provider_only`
 - `starting`
 - `healthy`
 - `degraded`
+
+Os principais `degraded_reason` esperados sao:
+- `no_eligible_containers`
+- `containers_without_valid_labels`
+- `containers_with_incomplete_labels`
+- `network_mismatch`
+- `provider_active_but_no_routes_materialized`
+
+## Snapshot do diagnostico atual
+
+No runtime local validado ate agora, o estado observado e:
+- `docker.sock` acessivel
+- `providers.docker.exposedByDefault=false`
+- `providers.docker.network=forgeops`
+- `traefik.docker.network=forgeops` nos containers experimentais
+- `traefik.enable=true` nos containers experimentais
+- labels de router e service presentes em `services.labels`
+- `docker_routers_count=0`
+- `docker_services_count=0`
+
+Os sinais mais recentes do observer ficaram assim:
+- `eligible_containers_count=4`
+- `labeled_containers_count=2`
+- `containers_with_valid_labels_count=2`
+- `containers_outside_expected_network_count=0`
+- `degraded_reason=provider_active_but_no_routes_materialized`
+
+Isso isola o problema atual como:
+- provider Docker ativo
+- containers experimentais elegiveis
+- labels minimas validas
+- rede aparente correta
+- nenhum router ou service `@docker` materializado no `/api/rawdata`
+
+Enquanto esse estado persistir, o `docker provider` nao deve substituir o `file provider`.
 
 ## Rotas experimentais
 
@@ -91,3 +133,5 @@ Se o provider experimental se mostrar consistente em multiplos ambientes:
 - mover as rotas principais para labels Docker
 - manter o `file provider` como fallback transitario
 - depois simplificar a configuracao quando a migracao estiver comprovadamente estavel
+
+Se o estado continuar como `provider_active_but_no_routes_materialized`, o proximo passo recomendado e validar o mesmo cenario em Linux nativo para diferenciar problema de runtime local de problema real de configuracao.
