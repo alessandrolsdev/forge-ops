@@ -99,6 +99,8 @@ cp .env.example .env
 
 Variaveis locais principais:
 - `FORGEOPS_PROXY_PORT`
+- `TRAEFIK_DOCKER_PROVIDER_ENABLED`
+- `TRAEFIK_DOCKER_PROVIDER_ENDPOINT`
 - `PORT`
 - `DATABASE_URL`
 - `REDIS_URL`
@@ -109,6 +111,14 @@ Variaveis locais principais:
 - `GITHUB_APP_WEBHOOK_SECRET`
 
 No modo Docker, `docker-compose.yml` sobrescreve `DATABASE_URL`, `REDIS_URL` e `NEXT_PUBLIC_API_BASE_URL` para usar service discovery e os dominios locais. O `.env` continua servindo como modo legado para execucao direta fora de containers.
+
+Configuracao do proxy local:
+- `TRAEFIK_DOCKER_PROVIDER_ENABLED=false`
+  mantem o modo estavel usando apenas `file provider`
+- `TRAEFIK_DOCKER_PROVIDER_ENABLED=true`
+  liga o `docker provider` em modo experimental, sem remover o fallback atual
+- `TRAEFIK_DOCKER_PROVIDER_ENDPOINT`
+  endpoint do Docker usado no preflight do provider experimental
 
 ### 3. Configurar hosts locais
 
@@ -141,6 +151,25 @@ Servicos esperados:
 PostgreSQL e Redis permanecem acessiveis apenas na rede Docker durante o uso normal da aplicacao.
 
 Se a porta `80` ja estiver ocupada por outra stack local, ajuste apenas `FORGEOPS_PROXY_PORT` no `.env`. O roteamento continua o mesmo; muda apenas a porta publicada pelo proxy.
+
+### 4.1 Provider do Traefik: estavel vs. experimental
+
+Modo padrao:
+- `file provider` ativo
+- `docker provider` desligado
+- roteamento principal estavel em `forgeops.local` e `api.forgeops.local`
+
+Modo experimental:
+- manter `file provider` ativo
+- definir `TRAEFIK_DOCKER_PROVIDER_ENABLED=true`
+- o proxy tenta habilitar o `docker provider` sem afetar as rotas principais
+- se houver falha de socket, API ou descoberta, o sistema continua funcional com `file provider`
+
+Hosts experimentais do `docker provider`:
+- `docker-frontend.forgeops.local`
+- `docker-api.forgeops.local`
+
+Esses hosts nao sao necessarios para o fluxo normal. Eles existem para validar a descoberta do provider experimental sem competir com as rotas estaveis.
 
 ### 5. Rodar o monorepo sem Docker
 
@@ -199,6 +228,10 @@ pnpm --filter @forgeops/backend prisma:generate
 - [docs/guides/](docs/guides/)
 - [docs/workflows/](docs/workflows/)
 - [docs/adr/](docs/adr/)
+
+Documentacao do ambiente local e do fallback do proxy:
+- [docs/architecture/current.md](docs/architecture/current.md)
+- [docs/architecture/local-dev-proxy.md](docs/architecture/local-dev-proxy.md)
 
 ## Licenca
 
