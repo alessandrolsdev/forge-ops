@@ -25,13 +25,53 @@ extract_unix_socket_path() {
 
 json_field_from_body() {
   field_name="$1"
-  awk -v field_name="$field_name" '
+  json_input="$(cat)"
+
+  if [ -z "$json_input" ]; then
+    return 0
+  fi
+
+  if jq_available; then
+    printf '%s' "$json_input" | jq -er --arg field_name "$field_name" '
+      if type == "object" and has($field_name) then
+        .[$field_name] | if . == null then empty else tostring end
+      else
+        empty
+      end
+    ' 2>/dev/null || true
+    return 0
+  fi
+
+  # Fallback limitado a campos controlados sem estruturas aninhadas.
+  printf '%s' "$json_input" | sed -nE "s/.*\"$field_name\":\"(([^\"\\\\]|\\\\.)*)\".*/\\1/p" \
+    | sed 's/\\"/"/g; s/\\\\/\\/g'
+}
+
+json_numeric_field_from_body() {
+  field_name="$1"
+  json_input="$(cat)"
+
+  if [ -z "$json_input" ]; then
+    return 0
+  fi
+
+  if jq_available; then
+    printf '%s' "$json_input" | jq -er --arg field_name "$field_name" '
+      if type == "object" and has($field_name) then
+        .[$field_name] | if (type == "number" or type == "boolean") then tostring else empty end
+      else
+        empty
+      end
+    ' 2>/dev/null || true
+    return 0
+  fi
+
+  printf '%s' "$json_input" | awk -v field_name="$field_name" '
     {
-      pattern = "\"" field_name "\":\"[^\"]+\""
+      pattern = "\"" field_name "\":(-?[0-9]+|true|false)"
       if (match($0, pattern)) {
         value = substr($0, RSTART, RLENGTH)
-        sub("^\"" field_name "\":\"", "", value)
-        sub("\"$", "", value)
+        sub("^\"" field_name "\":", "", value)
         print value
         exit
       }
@@ -59,8 +99,38 @@ json_field_or_default() {
   printf '%s' "$default_value"
 }
 
+json_numeric_field_or_default() {
+  field_name="$1"
+  default_value="$2"
+  json_input="${3:-}"
+
+  if [ -n "$json_input" ]; then
+    field_value="$(printf '%s' "$json_input" | json_numeric_field_from_body "$field_name" 2>/dev/null || true)"
+    if [ -n "$field_value" ]; then
+      printf '%s' "$field_value"
+      return
+    fi
+  fi
+
+  printf '%s' "$default_value"
+}
+
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\r\n' '  '
+}
+
+normalize_numeric_or_default() {
+  value="$1"
+  default_value="$2"
+
+  case "$value" in
+    ''|*[!0-9-]*)
+      printf '%s' "$default_value"
+      ;;
+    *)
+      printf '%s' "$value"
+      ;;
+  esac
 }
 
 build_provider_snapshot() {
@@ -235,7 +305,18 @@ log_provider_event() {
     log_fallback_reason='snapshot_unavailable'
   fi
 
-  printf '{"level":"%s","service":"forgeops-proxy","timestamp":"%s","event":"%s","message":"%s","docker_provider_enabled":%s,"docker_provider_active":%s,"docker_endpoint":"%s","docker_api_version":"%s","docker_version":"%s","traefik_version":"%s","provider_network":"%s","status":"%s","degraded_reason":"%s","log_fallback_reason":"%s"}\n' \
+  eligible_containers_count="$(json_numeric_field_or_default 'eligible_containers_count' '0' "$snapshot_json")"
+  labeled_containers_count="$(json_numeric_field_or_default 'labeled_containers_count' '0' "$snapshot_json")"
+  containers_with_valid_labels_count="$(json_numeric_field_or_default 'containers_with_valid_labels_count' '0' "$snapshot_json")"
+  docker_routers_count="$(json_numeric_field_or_default 'docker_routers_count' '0' "$snapshot_json")"
+  docker_services_count="$(json_numeric_field_or_default 'docker_services_count' '0' "$snapshot_json")"
+  eligible_containers_count="$(normalize_numeric_or_default "$eligible_containers_count" '0')"
+  labeled_containers_count="$(normalize_numeric_or_default "$labeled_containers_count" '0')"
+  containers_with_valid_labels_count="$(normalize_numeric_or_default "$containers_with_valid_labels_count" '0')"
+  docker_routers_count="$(normalize_numeric_or_default "$docker_routers_count" '0')"
+  docker_services_count="$(normalize_numeric_or_default "$docker_services_count" '0')"
+
+  printf '{"level":"%s","service":"forgeops-proxy","timestamp":"%s","event":"%s","message":"%s","docker_provider_enabled":%s,"docker_provider_active":%s,"docker_endpoint":"%s","docker_api_version":"%s","docker_version":"%s","traefik_version":"%s","provider_network":"%s","status":"%s","degraded_reason":"%s","log_fallback_reason":"%s","eligible_containers_count":%s,"labeled_containers_count":%s,"containers_with_valid_labels_count":%s,"docker_routers_count":%s,"docker_services_count":%s}\n' \
     "$(json_escape "$level")" \
     "$(json_escape "$timestamp")" \
     "$(json_escape "$event")" \
@@ -249,5 +330,10 @@ log_provider_event() {
     "$(json_escape "$provider_network")" \
     "$(json_escape "$status")" \
     "$(json_escape "$degraded_reason")" \
-    "$(json_escape "$log_fallback_reason")"
+    "$(json_escape "$log_fallback_reason")" \
+    "$eligible_containers_count" \
+    "$labeled_containers_count" \
+    "$containers_with_valid_labels_count" \
+    "$docker_routers_count" \
+    "$docker_services_count"
 }
