@@ -71,6 +71,14 @@ Os principais `degraded_reason` esperados sao:
 - `network_mismatch`
 - `provider_active_but_no_routes_materialized`
 
+O bootstrap e o observer agora compartilham a mesma logica de status e a mesma estrutura de snapshot para reduzir risco de drift entre scripts.
+
+Quando `jq` estiver ausente, falhar ao parsear ou receber payload inesperado:
+- o proxy nao falha silenciosamente
+- o status degrada de forma segura
+- o motivo fica explicito em log como `jq_unavailable` ou `jq_parse_failed`
+- o `file provider` permanece como caminho estavel
+
 ## Snapshot do diagnostico atual
 
 No runtime local validado ate agora, o estado observado e:
