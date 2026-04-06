@@ -143,3 +143,15 @@ Se o provider experimental se mostrar consistente em multiplos ambientes:
 - depois simplificar a configuracao quando a migracao estiver comprovadamente estavel
 
 Se o estado continuar como `provider_active_but_no_routes_materialized`, o proximo passo recomendado e validar o mesmo cenario em Linux nativo para diferenciar problema de runtime local de problema real de configuracao.
+
+O plano reproduzivel dessa comparacao esta em:
+- `docs/plans/traefik-docker-provider-runtime-compare.md`
+
+Baseline atual do runtime Docker Desktop / WSL2:
+- `eligible_containers_count=4`
+- `labeled_containers_count=2`
+- `docker_routers_count=0`
+- `docker_services_count=0`
+- `degraded_reason=provider_active_but_no_routes_materialized`
+- hosts estaveis `200`
+- hosts experimentais `404`
