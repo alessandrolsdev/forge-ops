@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "PullRequestState" AS ENUM ('open', 'closed', 'merged');
 
 -- CreateTable
