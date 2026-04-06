@@ -71,6 +71,14 @@ Os principais `degraded_reason` esperados sao:
 - `network_mismatch`
 - `provider_active_but_no_routes_materialized`
 
+O bootstrap e o observer agora compartilham a mesma logica de status e a mesma estrutura de snapshot para reduzir risco de drift entre scripts.
+
+Quando `jq` estiver ausente, falhar ao parsear ou receber payload inesperado:
+- o proxy nao falha silenciosamente
+- o status degrada de forma segura
+- o motivo fica explicito em log como `jq_unavailable` ou `jq_parse_failed`
+- o `file provider` permanece como caminho estavel
+
 ## Snapshot do diagnostico atual
 
 No runtime local validado ate agora, o estado observado e:
@@ -135,3 +143,15 @@ Se o provider experimental se mostrar consistente em multiplos ambientes:
 - depois simplificar a configuracao quando a migracao estiver comprovadamente estavel
 
 Se o estado continuar como `provider_active_but_no_routes_materialized`, o proximo passo recomendado e validar o mesmo cenario em Linux nativo para diferenciar problema de runtime local de problema real de configuracao.
+
+O plano reproduzivel dessa comparacao esta em:
+- `docs/plans/traefik-docker-provider-runtime-compare.md`
+
+Baseline atual do runtime Docker Desktop / WSL2:
+- `eligible_containers_count=4`
+- `labeled_containers_count=2`
+- `docker_routers_count=0`
+- `docker_services_count=0`
+- `degraded_reason=provider_active_but_no_routes_materialized`
+- hosts estaveis `200`
+- hosts experimentais `404`
