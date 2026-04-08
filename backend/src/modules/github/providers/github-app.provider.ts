@@ -12,6 +12,7 @@ import type {
   GitHubWorkflowRunDescriptor,
 } from '../github-app.boundary.js';
 import type { GitHubAppEnv } from '../../../infra/config/github-app-env.js';
+import type { ApplicationErrorDetails } from '../../../shared/errors/application-error.js';
 import { ConfigurationError } from '../../../shared/errors/configuration-error.js';
 import {
   GitHubRepositoryDiscoveryError,
@@ -127,12 +128,28 @@ const githubPullRequestReviewCommentsSchema = z.array(
 const GITHUB_API_VERSION = '2022-11-28';
 const DEFAULT_GITHUB_API_BASE_URL = 'https://api.github.com';
 const DEFAULT_TIMEOUT_MS = 5000;
+const DEFAULT_GITHUB_ERROR_MESSAGE = 'GitHub request failed.';
+const MAX_GITHUB_ERROR_MESSAGE_LENGTH = 200;
 
 export interface GitHubAppProviderOptions {
   apiBaseUrl?: string;
   fetchImplementation?: typeof fetch;
   now?: () => Date;
   appJwtFactory?: (config: GitHubAppEnv, now: Date) => string;
+}
+
+class GitHubApiRequestError extends Error {
+  public readonly details: ApplicationErrorDetails;
+
+  public constructor(details: ApplicationErrorDetails) {
+    super(
+      typeof details.githubResponseMessage === 'string'
+        ? details.githubResponseMessage
+        : DEFAULT_GITHUB_ERROR_MESSAGE,
+    );
+    this.name = 'GitHubApiRequestError';
+    this.details = details;
+  }
 }
 
 const maskIdentifier = (value: string): string => {
@@ -249,6 +266,10 @@ export class GitHubAppProvider implements GitHubAppBoundary {
         error instanceof GitHubWorkflowCatalogSyncError
       ) {
         throw error;
+      }
+
+      if (error instanceof GitHubApiRequestError) {
+        throw new GitHubWorkflowCatalogSyncError(error.details);
       }
 
       throw new GitHubWorkflowCatalogSyncError();
@@ -421,7 +442,11 @@ export class GitHubAppProvider implements GitHubAppBoundary {
     });
 
     if (!response.ok) {
-      throw new Error(`GitHub request failed with status ${response.status}.`);
+      throw new GitHubApiRequestError({
+        githubEndpoint: toGitHubEndpoint(input),
+        githubResponseStatus: response.status,
+        githubResponseMessage: await extractGitHubErrorMessage(response),
+      });
     }
 
     const payload: unknown = await response.json();
@@ -459,6 +484,63 @@ const createGitHubAppJwt = (config: GitHubAppEnv, now: Date): string => {
   ).toString('base64url');
 
   return `${signingInput}.${signature}`;
+};
+
+const toGitHubEndpoint = (input: string): string => {
+  try {
+    const url = new URL(input);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return input;
+  }
+};
+
+const truncateGitHubErrorMessage = (value: string): string => {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+
+  if (normalized.length <= MAX_GITHUB_ERROR_MESSAGE_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, MAX_GITHUB_ERROR_MESSAGE_LENGTH - 1)}…`;
+};
+
+const extractGitHubErrorMessage = async (response: Response): Promise<string> => {
+  const contentType = response.headers.get('content-type') ?? '';
+
+  if (contentType.includes('application/json')) {
+    try {
+      const payload: unknown = await response.json();
+
+      if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'message' in payload &&
+        typeof payload.message === 'string' &&
+        payload.message.trim().length > 0
+      ) {
+        return truncateGitHubErrorMessage(payload.message);
+      }
+    } catch {
+      return DEFAULT_GITHUB_ERROR_MESSAGE;
+    }
+  }
+
+  try {
+    const text = await response.text();
+
+    if (text.trim().length > 0) {
+      return truncateGitHubErrorMessage(text);
+    }
+  } catch {
+    return DEFAULT_GITHUB_ERROR_MESSAGE;
+  }
+
+  if (response.statusText.trim().length > 0) {
+    return truncateGitHubErrorMessage(response.statusText);
+  }
+
+  return DEFAULT_GITHUB_ERROR_MESSAGE;
 };
 
 const mapGitHubWorkflowRunDescriptor = (
