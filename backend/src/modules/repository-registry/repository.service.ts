@@ -129,6 +129,7 @@ const serializeApplicationError = (error: unknown): Record<string, string | numb
     return {
       errorCode: error.code,
       errorStatusCode: error.statusCode,
+      ...(error.details ?? {}),
     };
   }
 
