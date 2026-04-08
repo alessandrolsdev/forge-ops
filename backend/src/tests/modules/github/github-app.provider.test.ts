@@ -187,14 +187,27 @@ describe('GitHubAppProvider', () => {
   });
 
   it('should raise a safe workflow catalog error when workflow sync fails', async () => {
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ message: 'rate limited' }), {
-        status: 403,
-        headers: {
-          'content-type': 'application/json',
-        },
-      }),
-    );
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'installation-token' }), {
+          status: 201,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ message: 'Resource not accessible by integration' }),
+          {
+            status: 403,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
     const boundary = createGitHubAppBoundary(buildConfig(), {
       apiBaseUrl: 'https://api.github.test',
       fetchImplementation,
@@ -202,21 +215,23 @@ describe('GitHubAppProvider', () => {
       now: () => new Date('2026-03-29T12:00:00.000Z'),
     });
 
-    await expect(
-      boundary.listRepositoryWorkflows({
+    const error = await boundary
+      .listRepositoryWorkflows({
         owner: 'forgeops',
         name: 'backend',
-      }),
-    ).rejects.toBeInstanceOf(GitHubWorkflowCatalogSyncError);
-    await expect(
-      boundary.listRepositoryWorkflows({
-        owner: 'forgeops',
-        name: 'backend',
-      }),
-    ).rejects.toMatchObject({
+      })
+      .catch((caughtError: unknown) => caughtError);
+
+    expect(error).toBeInstanceOf(GitHubWorkflowCatalogSyncError);
+    expect(error).toMatchObject({
       code: 'github_workflow_catalog_unavailable',
       message: 'GitHub workflow catalog is currently unavailable.',
       statusCode: 503,
+      details: {
+        githubEndpoint: '/repos/forgeops/backend/actions/workflows?per_page=100',
+        githubResponseStatus: 403,
+        githubResponseMessage: 'Resource not accessible by integration',
+      },
     });
   });
 

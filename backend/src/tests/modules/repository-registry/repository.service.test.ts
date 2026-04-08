@@ -320,7 +320,14 @@ describe('RepositoryService', () => {
       workflowCatalogSync: {
         syncByRepositoryId: vi
           .fn()
-          .mockRejectedValue(new GitHubWorkflowCatalogSyncError()),
+          .mockRejectedValue(
+            new GitHubWorkflowCatalogSyncError({
+              githubEndpoint:
+                '/repos/forgeops/backend/actions/workflows?per_page=100',
+              githubResponseStatus: 403,
+              githubResponseMessage: 'Resource not accessible by integration',
+            }),
+          ),
       },
       logger,
     });
@@ -338,6 +345,9 @@ describe('RepositoryService', () => {
         fullName: 'forgeops/backend',
         errorCode: 'github_workflow_catalog_unavailable',
         errorStatusCode: 503,
+        githubEndpoint: '/repos/forgeops/backend/actions/workflows?per_page=100',
+        githubResponseStatus: 403,
+        githubResponseMessage: 'Resource not accessible by integration',
       },
       'Repository ingestion failed.',
     );

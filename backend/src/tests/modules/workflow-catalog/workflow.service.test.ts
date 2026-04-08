@@ -235,7 +235,11 @@ describe('WorkflowService', () => {
         assertConfigured: () => undefined,
         listInstallationRepositories: async () => [],
         listRepositoryWorkflows: async () => {
-          throw new GitHubWorkflowCatalogSyncError();
+          throw new GitHubWorkflowCatalogSyncError({
+            githubEndpoint: '/repos/forgeops/backend/actions/workflows?per_page=100',
+            githubResponseStatus: 403,
+            githubResponseMessage: 'Resource not accessible by integration',
+          });
         },
         listWorkflowRuns: async () => [],
         listWorkflowRunJobs: async () => [],
@@ -255,6 +259,9 @@ describe('WorkflowService', () => {
         fullName: 'forgeops/backend',
         errorCode: 'github_workflow_catalog_unavailable',
         errorStatusCode: 503,
+        githubEndpoint: '/repos/forgeops/backend/actions/workflows?per_page=100',
+        githubResponseStatus: 403,
+        githubResponseMessage: 'Resource not accessible by integration',
       },
       'Workflow catalog sync failed.',
     );
