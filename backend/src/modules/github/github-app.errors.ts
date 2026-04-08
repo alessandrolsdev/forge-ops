@@ -1,4 +1,7 @@
-import { ApplicationError } from '../../shared/errors/application-error.js';
+import {
+  ApplicationError,
+  type ApplicationErrorDetails,
+} from '../../shared/errors/application-error.js';
 
 export class GitHubRepositoryDiscoveryError extends ApplicationError {
   constructor() {
@@ -11,11 +14,12 @@ export class GitHubRepositoryDiscoveryError extends ApplicationError {
 }
 
 export class GitHubWorkflowCatalogSyncError extends ApplicationError {
-  constructor() {
+  constructor(details: ApplicationErrorDetails | null = null) {
     super(
       'GitHub workflow catalog is currently unavailable.',
       503,
       'github_workflow_catalog_unavailable',
+      details,
     );
   }
 }
