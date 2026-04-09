@@ -3,9 +3,10 @@
 ## Objetivo
 
 O workflow `codex-review` adiciona uma camada advisory de revisao automatizada sobre pull requests para `main`, combinando:
-- review automatizado por API de baixo custo
-- fallback de provider
-- fallback advisory transparente quando nenhum review util e produzido
+- review automatizado barato por API
+- fallback entre providers
+- comentario final transparente quando nenhum review util e produzido
+- gatilho manual premium do Codex por label
 
 ## Quando dispara
 
@@ -18,6 +19,7 @@ Eventos:
 - `synchronize`
 - `reopened`
 - `ready_for_review`
+- `labeled`
 
 Restricoes:
 - apenas para PRs contra `main`
@@ -41,9 +43,11 @@ Esse conjunto permite:
 ### Variaveis de repositorio
 
 - `CODEX_REVIEW_ENABLED`
-  liga ou desliga a automacao
+  liga ou desliga o review automatico
 - `OPENROUTER_MODEL`
   modelo preferencial da OpenRouter
+- `GEMINI_MODEL`
+  modelo preferencial da Gemini; sem definicao explicita o workflow usa `gemini-2.5-flash`
 
 Compatibilidade:
 - `CODEX_REVIEW_OPENROUTER_MODEL` ainda e aceito como alias legado
@@ -51,30 +55,33 @@ Compatibilidade:
 ### Secrets
 
 - `CODEX_REVIEW_PAT`
-  opcional, para o fluxo manual premium publicar `@codex review` como usuario real
+  opcional, para publicar `@codex review` como usuario real no fluxo manual
 - `OPENROUTER_API_KEY`
   provider automatico primario
-- `GEMINI_API_KEY` ou `GOOGLE_API_KEY`
+- `GEMINI_API_KEY`
   provider automatico secundario
+- `GOOGLE_API_KEY`
+  alias aceito para o fallback Gemini
 
 ## Cadeia de fallback
 
-O workflow segue esta ordem:
+O fluxo automatico segue esta ordem:
 
-1. review automatizado via OpenRouter
-2. retry unico na OpenRouter quando a resposta nao for publicavel
-3. review automatizado via Gemini 2.5 Flash
-4. retry unico no Gemini quando a resposta nao for publicavel
-5. comentario advisory final
+1. OpenRouter
+2. retry unico via OpenRouter
+3. Gemini 2.5 Flash
+4. retry unico via Gemini 2.5 Flash
+5. comentario final advisory
 
 Comentario final do fluxo automatico:
-- sempre via `GITHUB_TOKEN` como bot
-- nunca chama o Codex
+- sempre via `GITHUB_TOKEN`
+- sempre como bot
+- nunca chama `@codex review`
 
 Fluxo manual premium:
-- label `codex-review`
-- botao no frontend do ForgeOps que aplica a mesma label
-- comentario `@codex review` publicado como usuario real somente quando `CODEX_REVIEW_PAT` estiver valido
+- aplicar `label codex-review`
+- o frontend do ForgeOps pode solicitar a mesma label pelo backend
+- publicar `@codex review` como usuario real, se `CODEX_REVIEW_PAT` estiver disponivel
 
 ## Comportamento em fork PR
 
@@ -86,51 +93,73 @@ Motivo:
 
 ## Estrutura de alto nivel do job
 
-1. Checkout do repositório
+### Fluxo automatico
+
+1. Checkout do repositorio
 2. Skip de fork PR
 3. Check de configuracao
-4. Resolucao dos providers automaticos
-5. Coleta do contexto do PR e diff
-6. Tentativa via OpenRouter
-7. Retry unico da OpenRouter, se necessario
-8. Tentativa via Gemini
-9. Retry unico do Gemini, se necessario
-10. Publicacao do comentario final automatico
-11. Quando a PR recebe a label `codex-review`, o job manual publica `@codex review` como usuario real
+4. Coleta do contexto do PR e diff
+5. Tentativa via OpenRouter
+6. Retry unico via OpenRouter, se necessario
+7. Fallback via Gemini
+8. Retry unico via Gemini, se necessario
+9. Resolucao do resultado final
+10. Publicacao do comentario final pelo bot
+
+### Fluxo manual por label
+
+1. Checkout do repositorio
+2. Skip de fork PR
+3. Check de `CODEX_REVIEW_PAT`
+4. Resolucao do commenter autenticado
+5. Publicacao de `@codex review` como usuario real
 
 ## O que o workflow publica
 
-### Comentario automatico final
+### Comentario final automatico
 
 Pode publicar:
 - review automatizado complementar
 - comentario de readiness/advisory
 - fallback explicando o motivo observado
 
-### Trigger manual do Codex
+### Comentario manual premium
 
-Publica `@codex review` apenas quando:
-- a PR recebe a label `codex-review`
-- `CODEX_REVIEW_PAT` esta disponivel e valido
-- o comentario precisa sair como usuario real
+Quando possivel, publica:
+- `@codex review`
+- contexto curto de solicitacao manual
+- foco em arquitetura, riscos, testes e seguranca
 
 ## Falhas esperadas e degradacao
 
 O workflow e desenhado para degradar sem quebrar o PR:
 
-- PAT ausente ou invalido
-  o fluxo automatico continua e o trigger manual nao e publicado
-- OpenRouter indisponivel ou sem resposta publicavel
+- OpenRouter indisponivel
   tenta retry unico e depois Gemini
-- Gemini indisponivel ou sem resposta publicavel
-  cai em fallback humano
-- parse invalido, resposta vazia ou texto claramente nao publicavel
-  avanca para o proximo provider ou advisory final
+- Gemini indisponivel
+  tenta retry unico e depois cai em advisory
+- parsing sem texto util
+  tenta retry unico e depois passa para o proximo fallback
+- `CODEX_REVIEW_PAT` ausente ou invalido
+  o fluxo automatico continua; apenas o gatilho manual do Codex fica indisponivel
+
+## Qualidade do review automatico
+
+Idioma e tratado como criterio brando:
+- portugues do Brasil continua preferencial
+- ingles tecnico pontual nao invalida um review util
+
+Falha dura acontece apenas quando houver:
+- erro real de API
+- resposta vazia
+- parse invalido
+- conteudo claramente nao publicavel
 
 ## Arquivos relacionados
 
 - workflow principal: `.github/workflows/codex-review.yml`
 - smoke coverage: `.github/workflows/codex-review-smoke.yml`
+- smoke logic: `.github/scripts/codex-review-smoke.sh`
 - prompt principal: `.github/prompts/codex-review.md`
 - fallback message: `.github/prompts/codex-fallback.md`
 - readiness message: `.github/prompts/codex-readiness.md`

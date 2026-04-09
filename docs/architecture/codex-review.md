@@ -2,49 +2,52 @@
 
 ## Objetivo
 
-O `codex-review` e um workflow advisory de revisao automatizada para pull requests do ForgeOps. Ele existe para ampliar a revisao humana com sinais tecnicos sobre risco, escopo, testes, seguranca e fronteiras arquiteturais.
-
-O workflow nao bloqueia merge por si so e nao modifica conteudo do repositório.
+O `codex-review` e um workflow advisory de revisao automatizada para pull requests do ForgeOps. Ele amplia a revisao humana com sinais tecnicos sobre risco, escopo, testes, seguranca e fronteiras arquiteturais, mas nao bloqueia merge nem modifica conteudo do repositorio.
 
 ## Fluxo completo
 
 1. Um PR nao-draft e aberto, atualizado ou marcado como pronto para review contra `main`.
 2. O workflow `codex-review` dispara no GitHub Actions.
 3. PRs de fork sao ignorados para nao expor automacao a contexto nao confiavel.
-4. O workflow resolve a configuracao de review:
+4. O workflow resolve a configuracao automatica:
    - `CODEX_REVIEW_ENABLED`
-   - `CODEX_REVIEW_PAT`
    - `OPENROUTER_API_KEY`
    - `GEMINI_API_KEY` ou `GOOGLE_API_KEY`
    - `OPENROUTER_MODEL`
+   - `GEMINI_MODEL`
 5. O workflow coleta contexto do PR:
    - titulo
    - corpo
    - SHA
    - diff unificado
-6. O workflow tenta gerar um review automatizado via OpenRouter.
-7. Se a resposta da OpenRouter nao for utilizavel, faz um retry unico antes de avancar.
-8. Se a resposta continuar inutilizavel, entra o fallback automatico via Gemini 2.5 Flash.
-9. Se o Gemini falhar ou nao produzir texto publicavel, faz um retry unico antes de desistir.
+6. O review automatizado tenta OpenRouter como provider primario.
+7. Se OpenRouter falhar ou nao gerar conteudo publicavel, o workflow faz um retry unico.
+8. Se ainda assim nao houver saida utilizavel, o workflow tenta Gemini 2.5 Flash.
+9. Se Gemini falhar ou nao gerar conteudo publicavel, o workflow faz um retry unico.
 10. Se nenhum provider gerar texto publicavel, o workflow publica um comentario advisory explicando o motivo observado.
-11. O comentario final do fluxo automatico e sempre publicado via bot com `GITHUB_TOKEN`.
-12. O Codex so entra no fluxo manual, quando a PR recebe a label `codex-review`.
-13. O frontend do ForgeOps reutiliza esse mesmo gatilho manual ao aplicar a label `codex-review` pelo backend.
-14. Se `CODEX_REVIEW_PAT` estiver disponivel e valido, o job manual publica `@codex review` como usuario real.
+11. O comentario final do fluxo automatico sempre e publicado via `GITHUB_TOKEN`, preservando o bot como autor.
+12. O Codex fica reservado para o fluxo manual premium:
+    - o usuario aplica a label `codex-review`
+    - o frontend do ForgeOps pode solicitar essa mesma label pelo backend
+    - o workflow publica `@codex review` como usuario real quando `CODEX_REVIEW_PAT` estiver disponivel e valido
 
 ## Decisoes arquiteturais
 
-### PAT opcional para trigger manual como usuario
+### Codex fora do fluxo automatico
 
-`CODEX_REVIEW_PAT` nao e requisito para o workflow automatico. Ele existe para o fluxo manual premium publicar `@codex review` como usuario real quando a PR recebe a label `codex-review`.
+O Codex nao roda mais automaticamente no review padrao. Isso reduz custo e mantem o fluxo automatico com providers mais baratos antes do fallback advisory.
+
+### PAT opcional para fluxo manual premium
+
+`CODEX_REVIEW_PAT` nao e requisito para o fluxo automatico funcionar. Ele existe para permitir o gatilho manual premium do Codex por label, sempre como usuario real.
 
 Sem PAT valido:
-- o fluxo automatico continua sendo publicado pelo bot
-- o trigger manual do Codex nao e publicado
+- o fluxo automatico continua publicando como bot via `GITHUB_TOKEN`
+- o gatilho manual de `@codex review` por label fica indisponivel
 
 ### Fallback para `GITHUB_TOKEN`
 
-O comentario final automatico nao depende do PAT. Isso evita:
+O comentario final do fluxo automatico nao depende do PAT. Isso evita:
 - falha silenciosa em caso de token invalido
 - ausencia de comentario de status
 - divergencia entre comportamento real e expectativa operacional
@@ -78,17 +81,24 @@ Ordem de tentativa atual:
 Isso permite combinar:
 - review automatizado por API com custo mais baixo
 - fallback resiliente entre providers
-- Codex reservado para uso manual de maior valor
 - transparencia quando nenhum caminho produz saida util
+- Codex reservado para revisoes manuais de maior valor
 
 ## Criterios de utilidade do review automatizado
 
 O workflow tenta validar se a resposta:
 - contem texto publicavel
-- mantem preferencia por portugues, mas aceita ingles tecnico pontual
 - aborda risco tecnico de forma utilizavel
 
-Quando a saida falha por erro real de API, parse invalido, resposta vazia ou texto claramente nao publicavel, o fluxo segue para o retry unico ou fallback seguinte.
+Idioma passa a ser criterio brando:
+- portugues do Brasil continua preferencial
+- ingles tecnico pontual nao invalida um review util
+
+Falha dura acontece apenas quando houver:
+- erro real de API
+- resposta vazia
+- parse invalido
+- conteudo claramente nao publicavel
 
 ## Riscos operacionais
 
@@ -105,6 +115,7 @@ Impacto:
 
 Mitigacao:
 - fallback entre providers
+- retry unico por provider
 - comentario final com motivo observado
 - manutencao do modo advisory
 
@@ -114,9 +125,9 @@ O shape da resposta da API pode variar. Se o parser nao extrair texto util:
 - o workflow nao falha por isso
 - o comentario final informa que nao houve conteudo publicavel
 
-### Erro de autenticacao
+### Erro de autenticacao do PAT
 
-Falhas em `CODEX_REVIEW_PAT` nao devem impedir a publicacao final. O sistema degrada para `GITHUB_TOKEN` quando necessario.
+Falhas em `CODEX_REVIEW_PAT` nao devem impedir o fluxo automatico. O sistema continua comentando como bot e so perde o gatilho manual premium.
 
 ## Fronteiras de seguranca
 

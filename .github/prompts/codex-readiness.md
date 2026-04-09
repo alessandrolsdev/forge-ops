@@ -1,6 +1,6 @@
-Codex review automation está configurada como advisory, mas ainda não está habilitada para este repositório.
+O fluxo automatico de review complementar esta configurado como advisory, mas ainda nao esta habilitado para este repositorio.
 
-Nenhuma revisão automática do Codex foi solicitada para o commit {{sha}}.
+Nenhuma revisao automatica complementar foi solicitada para o commit {{sha}}.
 
 Revisão humana continua obrigatória.
 
