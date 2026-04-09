@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { mkdtempSync, copyFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   createLocalOperatorToken,
+  isExecutedDirectly,
   parseArgs,
 } from './generate-local-operator-token.mjs';
 
@@ -79,4 +84,44 @@ test('createLocalOperatorToken should reject missing auth inputs', () => {
       }),
     /OPERATOR_AUTH_ISSUER is required\./,
   );
+});
+
+test('isExecutedDirectly should be false when imported into tests', () => {
+  assert.equal(isExecutedDirectly(), false);
+});
+
+test('script should execute correctly from a path containing spaces', () => {
+  const tempDirectory = mkdtempSync(join(tmpdir(), 'forgeops token space '));
+  const scriptPath = join(tempDirectory, 'generate local token.mjs');
+
+  copyFileSync(
+    new URL('./generate-local-operator-token.mjs', import.meta.url),
+    scriptPath,
+  );
+
+  try {
+    const stdout = execFileSync(process.execPath, [scriptPath], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        OPERATOR_AUTH_MODE: 'shared-secret',
+        OPERATOR_AUTH_ISSUER: 'forgeops-local',
+        OPERATOR_AUTH_AUDIENCE: 'forgeops-operator',
+        OPERATOR_AUTH_SHARED_SECRET: 'local-secret',
+      },
+    }).trim();
+    const decoded = decodeToken(stdout);
+
+    assert.equal(decoded.payload.iss, 'forgeops-local');
+    assert.equal(decoded.payload.aud, 'forgeops-operator');
+    assert.deepEqual(decoded.payload.capabilities, [
+      'repositories:read',
+      'repositories:write',
+    ]);
+  } finally {
+    rmSync(tempDirectory, {
+      recursive: true,
+      force: true,
+    });
+  }
 });

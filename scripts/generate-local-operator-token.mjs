@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_TTL_SECONDS = 3600;
 
@@ -131,6 +132,14 @@ const printUsage = () => {
   );
 };
 
+const isExecutedDirectly = () => {
+  if (!process.argv[1]) {
+    return false;
+  }
+
+  return fileURLToPath(import.meta.url) === process.argv[1];
+};
+
 const main = () => {
   const mode = process.env.OPERATOR_AUTH_MODE;
 
@@ -158,7 +167,7 @@ const main = () => {
   process.stdout.write(`${token}\n`);
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isExecutedDirectly()) {
   try {
     main();
   } catch (error) {
@@ -168,4 +177,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
 }
 
-export { parseArgs };
+export { isExecutedDirectly, parseArgs };
