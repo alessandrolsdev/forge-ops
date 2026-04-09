@@ -7,6 +7,7 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      - labeled
     branches:
       - main
 
@@ -22,7 +23,7 @@ concurrency:
 jobs:
   codex-review:
     name: codex-review
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && github.event.action != 'labeled' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -43,10 +44,11 @@ jobs:
         if: ${{ !github.event.pull_request.head.repo.fork }}
         env:
           CODEX_REVIEW_ENABLED: ${{ vars.CODEX_REVIEW_ENABLED }}
-          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || vars.CODEX_REVIEW_OPENROUTER_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -57,59 +59,21 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if [ -n "${CODEX_REVIEW_PAT:-}" ]; then
-            echo "pat_present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "pat_present=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          if [ -n "${OPENAI_API_KEY:-}" ]; then
-            echo "openai_present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "openai_present=false" >> "$GITHUB_OUTPUT"
-          fi
-
           if [ -n "${OPENROUTER_API_KEY:-}" ] && [ -n "${OPENROUTER_MODEL:-}" ]; then
             echo "openrouter_present=true" >> "$GITHUB_OUTPUT"
           else
             echo "openrouter_present=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Resolve commenter identity
-        id: commenter
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.pat_present == 'true' }}
-        env:
-          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          response_path="$RUNNER_TEMP/codex-review/commenter.json"
-          mkdir -p "$(dirname "$response_path")"
-          http_status=$(
-            curl -s \
-              -o "$response_path" \
-              -w "%{http_code}" \
-              -H "Authorization: token ${CODEX_REVIEW_PAT}" \
-              -H "Accept: application/vnd.github+json" \
-              https://api.github.com/user \
-              || true
-          )
-
-          if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
-            login=$(jq -r '.login // empty' "$response_path" 2>/dev/null || true)
+          resolved_gemini_key="${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}"
+          if [ -n "$resolved_gemini_key" ]; then
+            echo "gemini_present=true" >> "$GITHUB_OUTPUT"
           else
-            login=""
+            echo "gemini_present=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if [ -z "$login" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "login=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "available=true" >> "$GITHUB_OUTPUT"
-          echo "login=$login" >> "$GITHUB_OUTPUT"
+          resolved_gemini_model="${GEMINI_MODEL:-gemini-2.5-flash}"
+          echo "gemini_model=$resolved_gemini_model" >> "$GITHUB_OUTPUT"
 
       - name: Collect pull request context
         id: pr-context
@@ -161,253 +125,9 @@ jobs:
 
           echo "context_dir=$output_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Publish Codex trigger comment as maintainer
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.commenter.outputs.available == 'true' }}
-        env:
-          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
-          COMMENTER_LOGIN: ${{ steps.commenter.outputs.login }}
-          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          marker=$(cat "$GITHUB_WORKSPACE/.github/prompts/codex-comment-marker.txt")
-          pr_number=$(jq -r '.number' "$PR_CONTEXT_DIR/pr.json")
-          pr_sha=$(jq -r '.sha' "$PR_CONTEXT_DIR/pr.json")
-          comments_url="${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments"
-          comment_body_path="$RUNNER_TEMP/codex-review/trigger-comment.md"
-
-          {
-            printf '%s\n' "$marker"
-            printf '@codex review\n\n'
-            printf 'Responda em portugues do Brasil.\n\n'
-            printf 'Critrios obrigatorios:\n'
-            printf '%s\n' '- idioma: portugues (pt-BR)'
-            printf '%s\n\n' '- foco em arquitetura, riscos e testes'
-            printf 'Solicitacao automatica de revisao Codex para o commit %s.\n\n' "$pr_sha"
-            printf 'Esta revisao continua advisory e nao substitui a revisao humana.\n'
-          } > "$comment_body_path"
-
-          set +e
-          comments_payload=$(
-            curl -s \
-              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
-              -H "Accept: application/vnd.github+json" \
-              "$comments_url?per_page=100" \
-          )
-          comments_status=$?
-          set -e
-
-          if [ "$comments_status" -ne 0 ]; then
-            echo "Skipping maintainer trigger comment update because GitHub comment listing failed."
-            exit 0
-          fi
-
-          existing_comment_id=$(
-            printf '%s' "$comments_payload" \
-              | jq -r --arg login "$COMMENTER_LOGIN" --arg marker "$marker" '
-                  .[]
-                  | select(.user.login == $login and ((.body // "") | contains($marker)))
-                  | .id
-                ' \
-              | head -n 1
-          )
-
-          if [ -n "$existing_comment_id" ]; then
-            set +e
-            jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-              | curl -s -X PATCH \
-                  "${{ github.api_url }}/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
-                  -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
-                  -H "Accept: application/vnd.github+json" \
-                  -H "Content-Type: application/json" \
-                  --data @- \
-                  > /dev/null
-            patch_status=$?
-            set -e
-            if [ "$patch_status" -ne 0 ]; then
-              echo "Skipping maintainer trigger comment patch because GitHub patch request failed."
-            fi
-            exit 0
-          fi
-
-          set +e
-          jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-            | curl -s -X POST \
-                "$comments_url" \
-                -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
-                -H "Accept: application/vnd.github+json" \
-                -H "Content-Type: application/json" \
-                --data @- \
-                > /dev/null
-          post_status=$?
-          set -e
-          if [ "$post_status" -ne 0 ]; then
-            echo "Skipping maintainer trigger comment creation because GitHub post request failed."
-          fi
-
-      - name: Run automated review via OpenAI API
-        id: openai-review
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.review-config.outputs.openai_present == 'true' }}
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          validate_review_language() {
-            local review_path="$1"
-            local provider_label="$2"
-            local review_text
-            local review_lower
-
-            if [ ! -s "$review_path" ]; then
-              return 1
-            fi
-
-            review_text=$(cat "$review_path")
-            review_lower=$(printf '%s' "$review_text" | tr '[:upper:]' '[:lower:]')
-
-            if printf '%s' "$review_lower" | grep -qiE '\b(the|and|with|this|that|from|for|are|should|could|would|issue|file|tests)\b'; then
-              echo "${provider_label} review language validation flagged probable English content."
-              return 1
-            fi
-
-            if ! printf '%s' "$review_lower" | grep -qiE '\b(revisao|risco|arquivo|correcao|teste|achados|materiais|residual|repositorio|arquitetura|seguranca)\b|[áéíóúãõç]'; then
-              echo "${provider_label} review language validation did not detect enough PT-BR signals."
-              return 1
-            fi
-
-            return 0
-          }
-
-          request_path="$RUNNER_TEMP/codex-review/openai-request.json"
-          response_path="$RUNNER_TEMP/codex-review/openai-response.json"
-          review_path="$RUNNER_TEMP/codex-review/openai-review.md"
-          prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
-          diff_path="$PR_CONTEXT_DIR/pr.diff"
-
-          jq -n \
-            --rawfile prompt "$prompt_path" \
-            --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
-            --rawfile diff "$diff_path" \
-            '{
-              model: "gpt-5.4",
-              store: false,
-              reasoning: {
-                effort: "none"
-              },
-              text: {
-                verbosity: "low"
-              },
-              instructions: $prompt,
-              input: [
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "input_text",
-                      text: (
-                        "PR title:\n" + ($pr[0].title // "(empty)") +
-                        "\n\nPR body:\n" + ($pr[0].body // "(empty)") +
-                        "\n\nUnified diff:\n" + $diff
-                      )
-                    }
-                  ]
-                }
-              ]
-            }' > "$request_path"
-
-          set +e
-          http_status=$(
-            curl -sS \
-              -o "$response_path" \
-              -w "%{http_code}" \
-              https://api.openai.com/v1/responses \
-              -H "Authorization: Bearer $OPENAI_API_KEY" \
-              -H "Content-Type: application/json" \
-              --data @"$request_path"
-          )
-          curl_exit=$?
-          set -e
-
-          if [ "$curl_exit" -ne 0 ]; then
-            echo "status=failed" >> "$GITHUB_OUTPUT"
-            echo "provider=openai" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A chamada para a OpenAI API falhou antes de retornar um payload." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
-            echo "status=failed" >> "$GITHUB_OUTPUT"
-            echo "provider=openai" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A OpenAI API respondeu com status HTTP $http_status." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          jq -r '
-            def text_value:
-              if . == null then
-                empty
-              elif type == "string" then
-                .
-              elif type == "object" then
-                .text // .value // empty
-              else
-                empty
-              end;
-
-            [
-              (.output_text? | strings),
-              (
-                .output[]?
-                | select(.type == "message")
-                | .content[]?
-                | select((.type // "") == "output_text" or (.type // "") == "text")
-                | .text
-                | text_value
-              ),
-              (
-                .output[]?
-                | .content[]?
-                | select((.type // "") == "output_text" or (.type // "") == "text")
-                | .text
-                | text_value
-              ),
-              (
-                .content[]?
-                | select((.type // "") == "output_text" or (.type // "") == "text")
-                | .text
-                | text_value
-              )
-            ]
-            | map(select(length > 0))
-            | unique
-            | join("\n\n")
-          ' "$response_path" > "$review_path"
-
-          if [ ! -s "$review_path" ] || [ "$(cat "$review_path")" = "null" ]; then
-            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
-            echo "provider=openai" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A OpenAI API respondeu, mas nao gerou texto publicavel no formato esperado." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if ! validate_review_language "$review_path" "OpenAI"; then
-            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
-            echo "provider=openai" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A OpenAI API respondeu em idioma diferente do portugues do Brasil." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "status=completed" >> "$GITHUB_OUTPUT"
-          echo "provider=openai" >> "$GITHUB_OUTPUT"
-          echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
-
-      - name: Run automated review via OpenRouter fallback
+      - name: Run automated review via OpenRouter
         id: openrouter-review
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.review-config.outputs.openrouter_present == 'true' && steps.openai-review.outputs.status != 'completed' }}
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.review-config.outputs.openrouter_present == 'true' }}
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || vars.CODEX_REVIEW_OPENROUTER_MODEL }}
@@ -416,30 +136,30 @@ jobs:
         run: |
           set -euo pipefail
 
-          validate_review_language() {
+          ensure_publishable_review() {
             local review_path="$1"
-            local provider_label="$2"
-            local review_text
-            local review_lower
 
             if [ ! -s "$review_path" ]; then
               return 1
             fi
 
-            review_text=$(cat "$review_path")
-            review_lower=$(printf '%s' "$review_text" | tr '[:upper:]' '[:lower:]')
-
-            if printf '%s' "$review_lower" | grep -qiE '\b(the|and|with|this|that|from|for|are|should|could|would|issue|file|tests)\b'; then
-              echo "${provider_label} review language validation flagged probable English content."
-              return 1
-            fi
-
-            if ! printf '%s' "$review_lower" | grep -qiE '\b(revisao|risco|arquivo|correcao|teste|achados|materiais|residual|repositorio|arquitetura|seguranca)\b|[áéíóúãõç]'; then
-              echo "${provider_label} review language validation did not detect enough PT-BR signals."
+            if [ "$(cat "$review_path")" = "null" ]; then
               return 1
             fi
 
             return 0
+          }
+
+          log_language_quality() {
+            local review_path="$1"
+            local provider_label="$2"
+            local review_lower
+
+            review_lower=$(tr '[:upper:]' '[:lower:]' < "$review_path")
+
+            if ! printf '%s' "$review_lower" | grep -qiE '\b(revisao|risco|arquivo|correcao|teste|achado|arquitetura|seguranca)\b'; then
+              echo "${provider_label} review published with weak PT-BR signals; accepting because the content is still publishable."
+            fi
           }
 
           request_path="$RUNNER_TEMP/codex-review/openrouter-request.json"
@@ -447,6 +167,8 @@ jobs:
           review_path="$RUNNER_TEMP/codex-review/openrouter-review.md"
           prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
           diff_path="$PR_CONTEXT_DIR/pr.diff"
+          fallback_reason="A OpenRouter API nao produziu um review publicavel."
+          attempts=0
 
           jq -n \
             --arg model "$OPENROUTER_MODEL" \
@@ -472,117 +194,251 @@ jobs:
               ]
             }' > "$request_path"
 
-          echo "OpenRouter model: $OPENROUTER_MODEL"
-          echo "OpenRouter prompt size (bytes): $(wc -c < "$prompt_path")"
-          echo "OpenRouter PR diff size (bytes): $(wc -c < "$diff_path")"
-
-          set +e
-          http_status=$(
-            curl -sS \
-              -o "$response_path" \
-              -w "%{http_code}" \
-              https://openrouter.ai/api/v1/chat/completions \
-              -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-              -H "Content-Type: application/json" \
-              -H "HTTP-Referer: https://github.com/${{ github.repository }}" \
-              -H "X-Title: ForgeOps Codex Review" \
-              --data @"$request_path"
-          )
-          curl_exit=$?
-          set -e
-
-          if [ "$curl_exit" -ne 0 ]; then
-            echo "status=failed" >> "$GITHUB_OUTPUT"
-            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A chamada para a OpenRouter API falhou antes de retornar um payload." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
-            echo "status=failed" >> "$GITHUB_OUTPUT"
-            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A OpenRouter API respondeu com status HTTP $http_status." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "OpenRouter API raw response:"
-          cat "$response_path"
-          echo
-          echo "OpenRouter API response summary:"
-          jq '{
-            id,
-            model,
-            choices_count: ([.choices[]?] | length),
-            first_choice_finish_reason: .choices[0]?.finish_reason,
-            first_choice_role: .choices[0]?.message?.role,
-            first_choice_content_type: (.choices[0]?.message?.content | type)
-          }' "$response_path"
-
-          jq -r '
-            def text_value:
-              if . == null then
-                empty
-              elif type == "string" then
-                .
-              elif type == "object" then
-                .text // empty
-              else
-                empty
-              end;
-
-            [
-              (.choices[0]?.message?.content | text_value),
-              (.choices[]?.message?.content | text_value),
-              (
-                .choices[0]?.message?.content[]?
-                | select((.type // "") == "text")
-                | (.text // empty)
-              ),
-              (
-                .choices[]?.message?.content[]?
-                | select((.type // "") == "text")
-                | (.text // empty)
-              )
-            ]
-            | map(select(length > 0))
-            | unique
-            | join("\n\n")
-          ' "$response_path" > "$review_path"
-
-          echo "OpenRouter parsed review size (bytes): $(wc -c < "$review_path")"
-
-          if [ ! -s "$review_path" ] || [ "$(cat "$review_path")" = "null" ]; then
-            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
-            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-            fallback_reason=$(
-              jq -r '
-                if (.error? != null) then
-                  "A OpenRouter API retornou um objeto de erro no payload."
-                elif ([.choices[]?] | length) == 0 then
-                  "A OpenRouter API respondeu sem `choices`."
-                elif (.choices[0]?.message? == null) then
-                  "A OpenRouter API respondeu sem `message` na primeira choice."
-                elif (.choices[0]?.message?.content == null) then
-                  "A OpenRouter API respondeu sem `message.content` na primeira choice."
-                else
-                  "A OpenRouter API respondeu, mas nao gerou texto publicavel no formato esperado."
-                end
-              ' "$response_path"
+          for attempt in 1 2; do
+            attempts="$attempt"
+            set +e
+            http_status=$(
+              curl -sS \
+                -o "$response_path" \
+                -w "%{http_code}" \
+                https://openrouter.ai/api/v1/chat/completions \
+                -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+                -H "Content-Type: application/json" \
+                -H "HTTP-Referer: https://github.com/${{ github.repository }}" \
+                -H "X-Title: ForgeOps Codex Review" \
+                --data @"$request_path"
             )
-            echo "fallback_reason=$fallback_reason" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            curl_exit=$?
+            set -e
 
-          if ! validate_review_language "$review_path" "OpenRouter"; then
-            echo "status=no_usable_output" >> "$GITHUB_OUTPUT"
-            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=A OpenRouter API respondeu em idioma diferente do portugues do Brasil." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            if [ "$curl_exit" -ne 0 ]; then
+              fallback_reason="A chamada para a OpenRouter API falhou antes de retornar um payload."
+            elif [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+              remote_message=$(
+                jq -r '.error?.message // .message // empty' "$response_path" 2>/dev/null || true
+              )
+              if [ -n "$remote_message" ]; then
+                fallback_reason="A OpenRouter API respondeu com status HTTP $http_status: $remote_message"
+              else
+                fallback_reason="A OpenRouter API respondeu com status HTTP $http_status."
+              fi
+            else
+              jq -r '
+                def text_value:
+                  if . == null then
+                    empty
+                  elif type == "string" then
+                    .
+                  elif type == "object" then
+                    .text // empty
+                  else
+                    empty
+                  end;
 
-          echo "status=completed" >> "$GITHUB_OUTPUT"
+                [
+                  (.choices[0]?.message?.content | text_value),
+                  (.choices[]?.message?.content | text_value),
+                  (
+                    .choices[0]?.message?.content[]?
+                    | select((.type // "") == "text")
+                    | (.text // empty)
+                  ),
+                  (
+                    .choices[]?.message?.content[]?
+                    | select((.type // "") == "text")
+                    | (.text // empty)
+                  )
+                ]
+                | map(select(length > 0))
+                | unique
+                | join("\n\n")
+              ' "$response_path" > "$review_path"
+
+              if ensure_publishable_review "$review_path"; then
+                log_language_quality "$review_path" "OpenRouter"
+                echo "status=completed" >> "$GITHUB_OUTPUT"
+                echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+                echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
+                echo "attempts=$attempts" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              fallback_reason=$(
+                jq -r '
+                  if (.error? != null) then
+                    "A OpenRouter API retornou um objeto de erro no payload."
+                  elif ([.choices[]?] | length) == 0 then
+                    "A OpenRouter API respondeu sem `choices`."
+                  elif (.choices[0]?.message? == null) then
+                    "A OpenRouter API respondeu sem `message` na primeira choice."
+                  elif (.choices[0]?.message?.content == null) then
+                    "A OpenRouter API respondeu sem `message.content` na primeira choice."
+                  else
+                    "A OpenRouter API respondeu, mas nao gerou texto publicavel no formato esperado."
+                  end
+                ' "$response_path"
+              )
+            fi
+
+            if [ "$attempt" -lt 2 ]; then
+              echo "OpenRouter attempt $attempt failed; retrying once before falling back."
+            fi
+          done
+
+          echo "status=failed" >> "$GITHUB_OUTPUT"
           echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-          echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
+          echo "fallback_reason=$fallback_reason" >> "$GITHUB_OUTPUT"
+          echo "attempts=$attempts" >> "$GITHUB_OUTPUT"
+
+      - name: Run automated review via Gemini fallback
+        id: gemini-review
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.review-config.outputs.enabled == 'true' && steps.review-config.outputs.gemini_present == 'true' && steps.openrouter-review.outputs.status != 'completed' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_MODEL: ${{ steps.review-config.outputs.gemini_model }}
+          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ensure_publishable_review() {
+            local review_path="$1"
+
+            if [ ! -s "$review_path" ]; then
+              return 1
+            fi
+
+            if [ "$(cat "$review_path")" = "null" ]; then
+              return 1
+            fi
+
+            return 0
+          }
+
+          log_language_quality() {
+            local review_path="$1"
+            local provider_label="$2"
+            local review_lower
+
+            review_lower=$(tr '[:upper:]' '[:lower:]' < "$review_path")
+
+            if ! printf '%s' "$review_lower" | grep -qiE '\b(revisao|risco|arquivo|correcao|teste|achado|arquitetura|seguranca)\b'; then
+              echo "${provider_label} review published with weak PT-BR signals; accepting because the content is still publishable."
+            fi
+          }
+
+          resolved_gemini_api_key="${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}"
+          request_path="$RUNNER_TEMP/codex-review/gemini-request.json"
+          response_path="$RUNNER_TEMP/codex-review/gemini-response.json"
+          review_path="$RUNNER_TEMP/codex-review/gemini-review.md"
+          prompt_path="$GITHUB_WORKSPACE/.github/prompts/codex-review.md"
+          diff_path="$PR_CONTEXT_DIR/pr.diff"
+          fallback_reason="A Gemini API nao produziu um review publicavel."
+          attempts=0
+
+          jq -n \
+            --rawfile prompt "$prompt_path" \
+            --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
+            --rawfile diff "$diff_path" \
+            '{
+              systemInstruction: {
+                role: "system",
+                parts: [
+                  {
+                    text: $prompt
+                  }
+                ]
+              },
+              generationConfig: {
+                temperature: 0.1
+              },
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text: (
+                        "PR title:\n" + ($pr[0].title // "(empty)") +
+                        "\n\nPR body:\n" + ($pr[0].body // "(empty)") +
+                        "\n\nUnified diff:\n" + $diff
+                      )
+                    }
+                  ]
+                }
+              ]
+            }' > "$request_path"
+
+          for attempt in 1 2; do
+            attempts="$attempt"
+            set +e
+            http_status=$(
+              curl -sS \
+                -o "$response_path" \
+                -w "%{http_code}" \
+                "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${resolved_gemini_api_key}" \
+                -H "Content-Type: application/json" \
+                --data @"$request_path"
+            )
+            curl_exit=$?
+            set -e
+
+            if [ "$curl_exit" -ne 0 ]; then
+              fallback_reason="A chamada para a Gemini API falhou antes de retornar um payload."
+            elif [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+              remote_message=$(
+                jq -r '.error?.message // .message // empty' "$response_path" 2>/dev/null || true
+              )
+              if [ -n "$remote_message" ]; then
+                fallback_reason="A Gemini API respondeu com status HTTP $http_status: $remote_message"
+              else
+                fallback_reason="A Gemini API respondeu com status HTTP $http_status."
+              fi
+            else
+              jq -r '
+                [
+                  .candidates[]?.content?.parts[]?.text
+                ]
+                | map(select(type == "string" and length > 0))
+                | unique
+                | join("\n\n")
+              ' "$response_path" > "$review_path"
+
+              if ensure_publishable_review "$review_path"; then
+                log_language_quality "$review_path" "Gemini"
+                echo "status=completed" >> "$GITHUB_OUTPUT"
+                echo "provider=gemini" >> "$GITHUB_OUTPUT"
+                echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
+                echo "attempts=$attempts" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              fallback_reason=$(
+                jq -r '
+                  if (.error? != null) then
+                    "A Gemini API retornou um objeto de erro no payload."
+                  elif ([.candidates[]?] | length) == 0 then
+                    "A Gemini API respondeu sem `candidates`."
+                  elif (.candidates[0]?.content? == null) then
+                    "A Gemini API respondeu sem `content` no primeiro candidate."
+                  elif ([.candidates[0]?.content?.parts[]?] | length) == 0 then
+                    "A Gemini API respondeu sem `parts` no primeiro candidate."
+                  else
+                    "A Gemini API respondeu, mas nao gerou texto publicavel no formato esperado."
+                  end
+                ' "$response_path"
+              )
+            fi
+
+            if [ "$attempt" -lt 2 ]; then
+              echo "Gemini attempt $attempt failed; retrying once before falling back."
+            fi
+          done
+
+          echo "status=failed" >> "$GITHUB_OUTPUT"
+          echo "provider=gemini" >> "$GITHUB_OUTPUT"
+          echo "fallback_reason=$fallback_reason" >> "$GITHUB_OUTPUT"
+          echo "attempts=$attempts" >> "$GITHUB_OUTPUT"
 
       - name: Resolve review result
         id: review-result
@@ -591,17 +447,30 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ steps.openai-review.outputs.status }}" = "completed" ]; then
-            echo "status=completed" >> "$GITHUB_OUTPUT"
-            echo "provider=${{ steps.openai-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
-            echo "review_path=${{ steps.openai-review.outputs.review_path }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           if [ "${{ steps.openrouter-review.outputs.status }}" = "completed" ]; then
             echo "status=completed" >> "$GITHUB_OUTPUT"
             echo "provider=${{ steps.openrouter-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
             echo "review_path=${{ steps.openrouter-review.outputs.review_path }}" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ steps.gemini-review.outputs.status }}" = "completed" ]; then
+            echo "status=completed" >> "$GITHUB_OUTPUT"
+            echo "provider=${{ steps.gemini-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
+            echo "review_path=${{ steps.gemini-review.outputs.review_path }}" >> "$GITHUB_OUTPUT"
+            if [ -n "${{ steps.openrouter-review.outputs.fallback_reason }}" ]; then
+              echo "fallback_reason=${{ steps.openrouter-review.outputs.fallback_reason }}" >> "$GITHUB_OUTPUT"
+            else
+              echo "fallback_reason=" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          if [ -n "${{ steps.gemini-review.outputs.status }}" ]; then
+            echo "status=${{ steps.gemini-review.outputs.status }}" >> "$GITHUB_OUTPUT"
+            echo "provider=${{ steps.gemini-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
+            echo "fallback_reason=${{ steps.gemini-review.outputs.fallback_reason }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -612,27 +481,17 @@ jobs:
             exit 0
           fi
 
-          if [ -n "${{ steps.openai-review.outputs.status }}" ]; then
-            echo "status=${{ steps.openai-review.outputs.status }}" >> "$GITHUB_OUTPUT"
-            echo "provider=${{ steps.openai-review.outputs.provider }}" >> "$GITHUB_OUTPUT"
-            echo "fallback_reason=${{ steps.openai-review.outputs.fallback_reason }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           echo "status=failed" >> "$GITHUB_OUTPUT"
           echo "provider=none" >> "$GITHUB_OUTPUT"
           echo "fallback_reason=Nenhum provider de review automatizado estava configurado para este repositorio." >> "$GITHUB_OUTPUT"
 
-      - name: Publish Codex review status
+      - name: Publish review status
         if: ${{ always() && !github.event.pull_request.head.repo.fork }}
         env:
           CODEX_REVIEW_ENABLED: ${{ steps.review-config.outputs.enabled }}
-          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
           GITHUB_TOKEN: ${{ github.token }}
-          COMMENTER_AVAILABLE: ${{ steps.commenter.outputs.available }}
-          COMMENTER_LOGIN: ${{ steps.commenter.outputs.login }}
-          OPENAI_PRESENT: ${{ steps.review-config.outputs.openai_present }}
           OPENROUTER_PRESENT: ${{ steps.review-config.outputs.openrouter_present }}
+          GEMINI_PRESENT: ${{ steps.review-config.outputs.gemini_present }}
           REVIEW_STATUS: ${{ steps.review-result.outputs.status }}
           REVIEW_PROVIDER: ${{ steps.review-result.outputs.provider }}
           REVIEW_PATH: ${{ steps.review-result.outputs.review_path }}
@@ -649,14 +508,8 @@ jobs:
           pr_sha=$(jq -r '.sha' "$PR_CONTEXT_DIR/pr.json")
           comments_url="${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments"
           comment_body_path="$RUNNER_TEMP/codex-review/final-comment.md"
-
-          if [ "${COMMENTER_AVAILABLE:-false}" = "true" ] && [ -n "${CODEX_REVIEW_PAT:-}" ]; then
-            auth_token="$CODEX_REVIEW_PAT"
-            expected_login="$COMMENTER_LOGIN"
-          else
-            auth_token="$GITHUB_TOKEN"
-            expected_login="github-actions[bot]"
-          fi
+          auth_token="$GITHUB_TOKEN"
+          expected_login="github-actions[bot]"
 
           render_template() {
             local template_path="$1"
@@ -672,19 +525,17 @@ jobs:
               printf '%s\n' "$marker"
               render_template "$readiness_template"
             } > "$comment_body_path"
-          elif [ "$OPENAI_PRESENT" != "true" ] && [ "$OPENROUTER_PRESENT" != "true" ]; then
+          elif [ "$OPENROUTER_PRESENT" != "true" ] && [ "$GEMINI_PRESENT" != "true" ]; then
             {
               printf '%s\n' "$marker"
-              printf '@codex review\n\n'
-              printf 'Codex review automation esta habilitada, mas nenhum provider automatizado esta configurado para este repositorio.\n\n'
-              printf 'Configure `OPENAI_API_KEY` ou o par `OPENROUTER_API_KEY` + `OPENROUTER_MODEL`.\n\n'
+              printf 'O review automatico complementar esta habilitado, mas nenhum provider automatizado esta configurado para este repositorio.\n\n'
+              printf 'Configure `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` e/ou `GEMINI_API_KEY`.\n\n'
               printf 'Revisao humana continua obrigatoria.\n'
             } > "$comment_body_path"
           elif [ "$REVIEW_STATUS" = "completed" ] && [ -n "$REVIEW_PATH" ] && [ -f "$REVIEW_PATH" ]; then
             review_text=$(cat "$REVIEW_PATH")
             {
               printf '%s\n' "$marker"
-              printf '@codex review\n\n'
               printf 'Revisao automatica complementar concluida via %s para o commit %s.\n\n' "$REVIEW_PROVIDER" "$pr_sha"
               printf '%s\n\n' "$review_text"
               printf 'Esta revisao e advisory e nao substitui a revisao humana.\n'
@@ -692,7 +543,6 @@ jobs:
           else
             {
               printf '%s\n' "$marker"
-              printf '@codex review\n\n'
               render_template "$fallback_template"
             } > "$comment_body_path"
           fi
@@ -753,4 +603,178 @@ jobs:
           set -e
           if [ "$post_status" -ne 0 ]; then
             echo "Unable to create final status comment."
+          fi
+
+  manual-codex-review:
+    name: manual-codex-review
+    if: ${{ !github.event.pull_request.draft && github.event.action == 'labeled' && github.event.label.name == 'codex-review' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Skip fork pull requests
+        if: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          echo "Manual Codex review is skipped for fork pull requests to avoid exposing review automation to untrusted contexts."
+
+      - name: Check manual review configuration
+        id: manual-config
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        env:
+          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "${CODEX_REVIEW_PAT:-}" ]; then
+            echo "pat_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pat_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve commenter identity
+        id: commenter
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.manual-config.outputs.pat_present == 'true' }}
+        env:
+          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          response_path="$RUNNER_TEMP/codex-review/commenter.json"
+          mkdir -p "$(dirname "$response_path")"
+          http_status=$(
+            curl -s \
+              -o "$response_path" \
+              -w "%{http_code}" \
+              -H "Authorization: token ${CODEX_REVIEW_PAT}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/user \
+              || true
+          )
+
+          if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
+            login=$(jq -r '.login // empty' "$response_path" 2>/dev/null || true)
+          else
+            login=""
+          fi
+
+          if [ -z "$login" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "login=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "login=$login" >> "$GITHUB_OUTPUT"
+
+      - name: Collect pull request context
+        id: pr-context
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.commenter.outputs.available == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          output_dir="$RUNNER_TEMP/codex-review"
+          pr_json_path="$output_dir/pr.json"
+          pr_number=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+          pr_sha=$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")
+
+          mkdir -p "$output_dir"
+
+          jq -n \
+            --arg sha "$pr_sha" \
+            --argjson number "$pr_number" \
+            '{
+              sha: $sha,
+              number: $number
+            }' > "$pr_json_path"
+
+          echo "context_dir=$output_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Publish manual Codex trigger comment as maintainer
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.commenter.outputs.available == 'true' }}
+        env:
+          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
+          COMMENTER_LOGIN: ${{ steps.commenter.outputs.login }}
+          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          marker=$(cat "$GITHUB_WORKSPACE/.github/prompts/codex-comment-marker.txt")
+          pr_number=$(jq -r '.number' "$PR_CONTEXT_DIR/pr.json")
+          pr_sha=$(jq -r '.sha' "$PR_CONTEXT_DIR/pr.json")
+          comments_url="${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments"
+          comment_body_path="$RUNNER_TEMP/codex-review/manual-trigger-comment.md"
+
+          {
+            printf '%s\n' "$marker"
+            printf '@codex review\n\n'
+            printf 'Solicitacao manual de revisao premium do Codex para o commit %s via label `codex-review`.\n\n' "$pr_sha"
+            printf 'Foque em arquitetura, riscos, testes e seguranca.\n'
+          } > "$comment_body_path"
+
+          set +e
+          comments_payload=$(
+            curl -s \
+              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+              -H "Accept: application/vnd.github+json" \
+              "$comments_url?per_page=100" \
+          )
+          comments_status=$?
+          set -e
+
+          if [ "$comments_status" -ne 0 ]; then
+            echo "Skipping manual Codex trigger comment update because GitHub comment listing failed."
+            exit 0
+          fi
+
+          existing_comment_id=$(
+            printf '%s' "$comments_payload" \
+              | jq -r --arg login "$COMMENTER_LOGIN" --arg marker "$marker" '
+                  .[]
+                  | select(.user.login == $login and ((.body // "") | contains($marker)))
+                  | .id
+                ' \
+              | head -n 1
+          )
+
+          if [ -n "$existing_comment_id" ]; then
+            set +e
+            jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+              | curl -s -X PATCH \
+                  "${{ github.api_url }}/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
+                  -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "Content-Type: application/json" \
+                  --data @- \
+                  > /dev/null
+            patch_status=$?
+            set -e
+            if [ "$patch_status" -ne 0 ]; then
+              echo "Skipping manual Codex trigger comment patch because GitHub patch request failed."
+            fi
+            exit 0
+          fi
+
+          set +e
+          jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+            | curl -s -X POST \
+                "$comments_url" \
+                -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
+                -H "Accept: application/vnd.github+json" \
+                -H "Content-Type: application/json" \
+                --data @- \
+                > /dev/null
+          post_status=$?
+          set -e
+          if [ "$post_status" -ne 0 ]; then
+            echo "Skipping manual Codex trigger comment creation because GitHub post request failed."
           fi

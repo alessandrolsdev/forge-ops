@@ -3,10 +3,10 @@
 ## Objetivo
 
 O workflow `codex-review` adiciona uma camada advisory de revisao automatizada sobre pull requests para `main`, combinando:
-- comentario de trigger para o Codex
-- tentativa de review automatizado por API
-- fallback de provider
+- review automatizado barato por API
+- fallback entre providers
 - comentario final transparente quando nenhum review util e produzido
+- gatilho manual premium do Codex por label
 
 ## Quando dispara
 
@@ -18,6 +18,7 @@ Eventos:
 - `synchronize`
 - `reopened`
 - `ready_for_review`
+- `labeled`
 
 Restricoes:
 - apenas para PRs contra `main`
@@ -41,9 +42,11 @@ Esse conjunto permite:
 ### Variaveis de repositorio
 
 - `CODEX_REVIEW_ENABLED`
-  liga ou desliga a automacao
+  liga ou desliga o review automatico
 - `OPENROUTER_MODEL`
   modelo preferencial da OpenRouter
+- `GEMINI_MODEL`
+  modelo preferencial da Gemini; sem definicao explicita o workflow usa `gemini-2.5-flash`
 
 Compatibilidade:
 - `CODEX_REVIEW_OPENROUTER_MODEL` ainda e aceito como alias legado
@@ -51,24 +54,31 @@ Compatibilidade:
 ### Secrets
 
 - `CODEX_REVIEW_PAT`
-  opcional, para comentar como usuario real
-- `OPENAI_API_KEY`
-  provider principal de review automatizado
+  opcional, para publicar `@codex review` como usuario real no fluxo manual
 - `OPENROUTER_API_KEY`
-  provider de fallback
+  provider automatico primario
+- `GEMINI_API_KEY`
+  provider automatico secundario
+- `GOOGLE_API_KEY`
+  alias aceito para o fallback Gemini
 
 ## Cadeia de fallback
 
-O workflow segue esta ordem:
+O fluxo automatico segue esta ordem:
 
-1. comentario inicial `@codex review` como usuario real, se `CODEX_REVIEW_PAT` estiver disponivel
-2. review automatizado via OpenAI
-3. review automatizado via OpenRouter
-4. comentario final de fallback humano
+1. OpenRouter
+2. retry unico via OpenRouter
+3. Gemini 2.5 Flash
+4. retry unico via Gemini 2.5 Flash
+5. comentario final advisory
 
-Comentario final:
-- com PAT valido: como usuario real
-- sem PAT valido: via `GITHUB_TOKEN` como bot
+Comentario final do fluxo automatico:
+- sempre via `GITHUB_TOKEN`
+- sempre como bot
+
+Fluxo manual premium:
+- aplicar `label codex-review`
+- publicar `@codex review` como usuario real, se `CODEX_REVIEW_PAT` estiver disponivel
 
 ## Comportamento em fork PR
 
@@ -80,50 +90,61 @@ Motivo:
 
 ## Estrutura de alto nivel do job
 
-1. Checkout do repositório
+### Fluxo automatico
+
+1. Checkout do repositorio
 2. Skip de fork PR
 3. Check de configuracao
-4. Resolucao opcional do commenter autenticado
-5. Coleta do contexto do PR e diff
-6. Publicacao do trigger `@codex review`
-7. Tentativa via OpenAI
-8. Fallback via OpenRouter
+4. Coleta do contexto do PR e diff
+5. Tentativa via OpenRouter
+6. Retry unico via OpenRouter, se necessario
+7. Fallback via Gemini
+8. Retry unico via Gemini, se necessario
 9. Resolucao do resultado final
-10. Publicacao do comentario final
+10. Publicacao do comentario final pelo bot
+
+### Fluxo manual por label
+
+1. Checkout do repositorio
+2. Skip de fork PR
+3. Check de `CODEX_REVIEW_PAT`
+4. Resolucao do commenter autenticado
+5. Publicacao de `@codex review` como usuario real
 
 ## O que o workflow publica
 
-### Trigger comment
-
-Quando possivel, publica:
-- `@codex review`
-- instrucao de resposta em portugues do Brasil
-- foco em arquitetura, riscos e testes
-
-### Final comment
+### Comentario final automatico
 
 Pode publicar:
 - review automatizado complementar
 - comentario de readiness/advisory
 - fallback explicando o motivo observado
 
+### Comentario manual premium
+
+Quando possivel, publica:
+- `@codex review`
+- contexto curto de solicitacao manual
+- foco em arquitetura, riscos, testes e seguranca
+
 ## Falhas esperadas e degradacao
 
 O workflow e desenhado para degradar sem quebrar o PR:
 
-- PAT ausente ou invalido
-  comentario final deve continuar
-- OpenAI indisponivel
-  tenta OpenRouter
 - OpenRouter indisponivel
-  cai em fallback humano
+  tenta retry unico e depois Gemini
+- Gemini indisponivel
+  tenta retry unico e depois cai em advisory
 - parsing sem texto util
-  publica comentario com motivo observado
+  tenta retry unico e depois passa para o proximo fallback
+- `CODEX_REVIEW_PAT` ausente ou invalido
+  o fluxo automatico continua; apenas o gatilho manual do Codex fica indisponivel
 
 ## Arquivos relacionados
 
 - workflow principal: `.github/workflows/codex-review.yml`
 - smoke coverage: `.github/workflows/codex-review-smoke.yml`
+- smoke logic: `.github/scripts/codex-review-smoke.sh`
 - prompt principal: `.github/prompts/codex-review.md`
 - fallback message: `.github/prompts/codex-fallback.md`
 - readiness message: `.github/prompts/codex-readiness.md`
