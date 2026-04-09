@@ -64,11 +64,12 @@ O repositório possui um workflow advisory de review automatizado em `.github/wo
 Resumo do comportamento atual:
 1. Um pull request para `main` dispara o workflow.
 2. O workflow ignora PRs de fork e PRs draft.
-3. Se `CODEX_REVIEW_PAT` estiver valido, o comentario inicial `@codex review` e publicado como usuario real.
-4. O workflow tenta gerar um review automatizado via OpenAI.
-5. Se o caminho principal nao produzir um review utilizavel, entra o fallback via OpenRouter.
+3. O fluxo automatico tenta gerar um review complementar via OpenRouter.
+4. Se o caminho principal nao produzir um review utilizavel, entra o fallback via Gemini 2.5 Flash.
+5. Cada provider automatico tem um retry unico antes de o workflow passar para o proximo fallback.
 6. Se nenhum provider produzir conteudo publicavel, o workflow publica um comentario advisory explicando o motivo observado.
-7. Quando o PAT nao estiver disponivel, a publicacao final cai para `GITHUB_TOKEN`, preservando o comentario de status como `github-actions[bot]`.
+7. O comentario final do fluxo automatico sai sempre via `GITHUB_TOKEN`, preservando o bot como autor.
+8. O Codex fica reservado para o fluxo manual premium via `label codex-review`, com comentario publicado como usuario real quando `CODEX_REVIEW_PAT` estiver valido.
 
 Documentacao detalhada:
 - [Arquitetura do Codex Review](docs/architecture/codex-review.md)
@@ -193,16 +194,22 @@ pnpm --filter @forgeops/backend prisma:generate
 O `codex-review` usa configuracao de GitHub Actions, nao o `.env` local da aplicacao. As variaveis e segredos mais importantes sao:
 
 - `CODEX_REVIEW_PAT`
-  secret opcional para publicar comentarios como usuario real
+  secret opcional para publicar a solicitacao manual de `@codex review` como usuario real
 - `OPENROUTER_API_KEY`
-  secret para o provider de fallback
+  secret para o provider automatico primario
 - `OPENROUTER_MODEL`
   repository variable preferencial para o modelo da OpenRouter
+- `GEMINI_API_KEY`
+  secret preferencial para o fallback automatico via Gemini 2.5 Flash
+- `GOOGLE_API_KEY`
+  alias aceito para o fallback automatico via Gemini 2.5 Flash
+- `GEMINI_MODEL`
+  repository variable opcional; sem definicao explicita o workflow usa `gemini-2.5-flash`
 
 Observacoes:
-- o workflow tambem suporta `OPENAI_API_KEY` para o caminho principal de review automatizado
+- o fluxo automatico nao chama mais `@codex review`
 - por compatibilidade operacional, o workflow ainda aceita `CODEX_REVIEW_OPENROUTER_MODEL` como alias legado
-- sem `CODEX_REVIEW_PAT`, o comentario final continua sendo publicado via `GITHUB_TOKEN`
+- sem `CODEX_REVIEW_PAT`, o fluxo automatico continua funcionando e comentando como bot; apenas o gatilho manual do Codex fica indisponivel
 
 ## Testes e validacoes
 
