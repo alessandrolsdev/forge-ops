@@ -14,35 +14,37 @@ O workflow nao bloqueia merge por si so e nao modifica conteudo do repositório.
 4. O workflow resolve a configuracao de review:
    - `CODEX_REVIEW_ENABLED`
    - `CODEX_REVIEW_PAT`
-   - `OPENAI_API_KEY`
    - `OPENROUTER_API_KEY`
+   - `GEMINI_API_KEY` ou `GOOGLE_API_KEY`
    - `OPENROUTER_MODEL`
-5. Se `CODEX_REVIEW_PAT` estiver disponivel e valido, o comentario inicial `@codex review` e publicado como usuario real.
-6. O workflow coleta contexto do PR:
+5. O workflow coleta contexto do PR:
    - titulo
    - corpo
    - SHA
    - diff unificado
-7. O workflow tenta gerar um review automatizado via OpenAI.
-8. Se a resposta da OpenAI nao for utilizavel, entra o fallback via OpenRouter.
-9. Se nenhum provider gerar texto publicavel, o workflow publica um comentario advisory explicando o motivo observado.
-10. O comentario final sempre e tentado em PRs nao-fork:
-   - com `CODEX_REVIEW_PAT` quando o commenter autenticado estiver disponivel
-   - com `GITHUB_TOKEN` quando o PAT estiver ausente ou invalido
+6. O workflow tenta gerar um review automatizado via OpenRouter.
+7. Se a resposta da OpenRouter nao for utilizavel, faz um retry unico antes de avancar.
+8. Se a resposta continuar inutilizavel, entra o fallback automatico via Gemini 2.5 Flash.
+9. Se o Gemini falhar ou nao produzir texto publicavel, faz um retry unico antes de desistir.
+10. Se nenhum provider gerar texto publicavel, o workflow publica um comentario advisory explicando o motivo observado.
+11. O comentario final do fluxo automatico e sempre publicado via bot com `GITHUB_TOKEN`.
+12. O Codex so entra no fluxo manual, quando a PR recebe a label `codex-review`.
+13. O frontend do ForgeOps reutiliza esse mesmo gatilho manual ao aplicar a label `codex-review` pelo backend.
+14. Se `CODEX_REVIEW_PAT` estiver disponivel e valido, o job manual publica `@codex review` como usuario real.
 
 ## Decisoes arquiteturais
 
-### PAT opcional para comentario como usuario
+### PAT opcional para trigger manual como usuario
 
-`CODEX_REVIEW_PAT` nao e requisito para o workflow funcionar. Ele existe para melhorar a experiencia operacional, permitindo que o comentario inicial e, quando possivel, o comentario final sejam publicados como usuario real.
+`CODEX_REVIEW_PAT` nao e requisito para o workflow automatico. Ele existe para o fluxo manual premium publicar `@codex review` como usuario real quando a PR recebe a label `codex-review`.
 
 Sem PAT valido:
-- o trigger como usuario pode nao ocorrer
-- o comentario final continua sendo publicado como bot via `GITHUB_TOKEN`
+- o fluxo automatico continua sendo publicado pelo bot
+- o trigger manual do Codex nao e publicado
 
 ### Fallback para `GITHUB_TOKEN`
 
-O comentario final nao depende do PAT. Isso evita:
+O comentario final automatico nao depende do PAT. Isso evita:
 - falha silenciosa em caso de token invalido
 - ausencia de comentario de status
 - divergencia entre comportamento real e expectativa operacional
@@ -66,24 +68,27 @@ As instrucoes e mensagens do workflow ficam em `.github/prompts/` para manter:
 
 Ordem de tentativa atual:
 
-1. Codex disparado por comentario `@codex review`
-2. Review automatizado via OpenAI
-3. Review automatizado via OpenRouter
-4. Comentario final de fallback humano
+1. Review automatizado via OpenRouter
+2. Retry unico da OpenRouter
+3. Review automatizado via Gemini 2.5 Flash
+4. Retry unico do Gemini
+5. Comentario final advisory via bot
+6. Codex apenas no fluxo manual por label `codex-review`
 
 Isso permite combinar:
-- review nativo do Codex no GitHub
-- review automatizado por API
+- review automatizado por API com custo mais baixo
+- fallback resiliente entre providers
+- Codex reservado para uso manual de maior valor
 - transparencia quando nenhum caminho produz saida util
 
 ## Criterios de utilidade do review automatizado
 
 O workflow tenta validar se a resposta:
 - contem texto publicavel
-- parece estar em portugues do Brasil
+- mantem preferencia por portugues, mas aceita ingles tecnico pontual
 - aborda risco tecnico de forma utilizavel
 
-Quando a saida falha nesses criterios, ela e tratada como invalida e o fluxo segue para o fallback seguinte.
+Quando a saida falha por erro real de API, parse invalido, resposta vazia ou texto claramente nao publicavel, o fluxo segue para o retry unico ou fallback seguinte.
 
 ## Riscos operacionais
 

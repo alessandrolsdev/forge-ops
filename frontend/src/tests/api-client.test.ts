@@ -411,6 +411,48 @@ describe('createApiClient', () => {
     );
   });
 
+  it('should request a manual Codex review for a pull request', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          pullRequestId: 'pr_123',
+          pullRequestNumber: 42,
+          label: 'codex-review',
+          status: 'requested',
+        }),
+        {
+          status: 202,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'http://localhost:3333',
+      fetcher,
+    });
+
+    await expect(
+      client.requestPullRequestCodexReview('trusted-token', 'repo_123', 'pr_123'),
+    ).resolves.toEqual({
+      pullRequestId: 'pr_123',
+      pullRequestNumber: 42,
+      label: 'codex-review',
+      status: 'requested',
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      'http://localhost:3333/api/v1/repositories/repo_123/pull-requests/pr_123/codex-review-request',
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          authorization: 'Bearer trusted-token',
+        },
+      },
+    );
+  });
+
   it('should fetch workflow run detail with jobs', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

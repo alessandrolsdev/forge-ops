@@ -57,6 +57,15 @@ export interface PullRequestDetail {
   }>;
 }
 
+export interface PullRequestCodexReviewRequest {
+  pullRequestId: string;
+  pullRequestNumber: number;
+  label: 'codex-review';
+  status: 'requested';
+}
+
+const MANUAL_CODEX_REVIEW_LABEL = 'codex-review' as const;
+
 export class PullRequestService {
   constructor(private readonly options: PullRequestServiceOptions) {}
 
@@ -155,6 +164,77 @@ export class PullRequestService {
           finishedAt: workflow.finishedAt,
         })),
     };
+  }
+
+  async requestCodexReviewById(
+    repositoryId: string,
+    pullRequestId: string,
+  ): Promise<PullRequestCodexReviewRequest> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
+    const pullRequest = await this.options.pullRequestRepository.findById(
+      pullRequestId,
+    );
+
+    if (!pullRequest || pullRequest.repositoryId !== repositoryId) {
+      throw new PullRequestNotFoundError();
+    }
+
+    const requestPullRequestCodexReview =
+      this.options.githubBoundary.requestPullRequestCodexReview;
+
+    if (!requestPullRequestCodexReview) {
+      throw new Error('GitHub manual review requests are not configured.');
+    }
+
+    try {
+      await requestPullRequestCodexReview(
+        {
+          owner: repository.owner,
+          name: repository.name,
+        },
+        pullRequest.number,
+      );
+
+      this.logger.info(
+        {
+          event: 'pull_request_codex_review_requested',
+          repositoryId: repository.id,
+          fullName: repository.fullName,
+          pullRequestId: pullRequest.id,
+          githubPrNumber: pullRequest.number,
+          reviewLabel: MANUAL_CODEX_REVIEW_LABEL,
+        },
+        'Manual Codex review request submitted.',
+      );
+
+      return {
+        pullRequestId: pullRequest.id,
+        pullRequestNumber: pullRequest.number,
+        label: MANUAL_CODEX_REVIEW_LABEL,
+        status: 'requested',
+      };
+    } catch (error) {
+      this.logger.error(
+        {
+          event: 'pull_request_codex_review_request_failed',
+          repositoryId: repository.id,
+          fullName: repository.fullName,
+          pullRequestId: pullRequest.id,
+          githubPrNumber: pullRequest.number,
+          reviewLabel: MANUAL_CODEX_REVIEW_LABEL,
+          ...serializeApplicationError(error),
+        },
+        'Manual Codex review request failed.',
+      );
+
+      throw error;
+    }
   }
 
   async syncByRepositoryId(repositoryId: string): Promise<PullRequest[]> {

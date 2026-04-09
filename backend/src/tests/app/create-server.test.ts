@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from '../../app/create-server.js';
 import {
   GitHubRepositoryDiscoveryError,
@@ -179,6 +179,10 @@ const createProtectedServer = (overrides?: {
     state: Workflow['state'];
     sourceType: Workflow['sourceType'];
   }>;
+  requestPullRequestCodexReview?: (
+    repository: { owner: string; name: string },
+    pullRequestNumber: number,
+  ) => Promise<void>;
   capabilities?: string[];
 }) => {
   const repositoryStore = [...(overrides?.repositories ?? [])];
@@ -253,6 +257,8 @@ const createProtectedServer = (overrides?: {
       listWorkflowRunJobs: async () => [],
       listPullRequests: async () => [],
       listPullRequestReviewComments: async () => [],
+      requestPullRequestCodexReview:
+        overrides?.requestPullRequestCodexReview ?? (async () => undefined),
     },
     repositoryRegistryRepository: {
       list: async () => [...repositoryStore],
@@ -1918,6 +1924,88 @@ describe('createServer', () => {
       },
       workflows: [],
     });
+
+    await server.close();
+  });
+
+  it('should require authentication for manual Codex review requests', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_123/codex-review-request',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'authentication_required',
+        message: 'Authentication is required.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should require repositories:write to request a manual Codex review', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+      capabilities: ['repositories:read'],
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_123/codex-review-request',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'forbidden',
+        message: 'You are not allowed to perform this action.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should request a manual Codex review by applying the codex-review label', async () => {
+    const requestPullRequestCodexReview = vi.fn().mockResolvedValue(undefined);
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+      requestPullRequestCodexReview,
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories/repo_123/pull-requests/pr_123/codex-review-request',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({
+      pullRequestId: 'pr_123',
+      pullRequestNumber: 42,
+      label: 'codex-review',
+      status: 'requested',
+    });
+    expect(requestPullRequestCodexReview).toHaveBeenCalledWith(
+      {
+        owner: 'forgeops',
+        name: 'backend',
+      },
+      42,
+    );
 
     await server.close();
   });
