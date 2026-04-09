@@ -9,7 +9,9 @@
     "lint": "node scripts/run-workspaces.mjs lint",
     "typecheck": "node scripts/run-workspaces.mjs typecheck",
     "test": "node scripts/run-workspaces.mjs test",
+    "token:local": "node scripts/generate-local-operator-token.mjs",
     "test:proxy": "node --test scripts/provider-status.test.mjs",
+    "test:token:local": "node --test scripts/generate-local-operator-token.test.mjs",
     "format": "node scripts/run-bin.mjs prettier --write .",
     "format:check": "node scripts/run-bin.mjs prettier --check ."
   },
