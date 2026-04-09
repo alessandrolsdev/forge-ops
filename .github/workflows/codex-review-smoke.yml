@@ -28,66 +28,103 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - scenario: pat_invalid
-            fork_pr: "false"
-            review_enabled: "true"
-            pat_available: "false"
-            openai_present: "true"
-            openai_result: "completed"
-            openrouter_present: "true"
-            openrouter_result: "completed"
-            expected_final_comment: "true"
-            expected_comment_publisher: "github_token"
-            expected_review_provider: "openai"
-            expected_review_status: "completed"
-          - scenario: openai_unavailable
+          - scenario: automatic_happy_path
+            mode: automatic
             fork_pr: "false"
             review_enabled: "true"
             pat_available: "true"
-            openai_present: "true"
-            openai_result: "failed"
             openrouter_present: "true"
             openrouter_result: "completed"
+            gemini_present: "true"
+            gemini_result: "completed"
             expected_final_comment: "true"
-            expected_comment_publisher: "maintainer_pat"
+            expected_manual_trigger_comment: "false"
+            expected_comment_publisher: "github_token"
             expected_review_provider: "openrouter"
             expected_review_status: "completed"
-          - scenario: openrouter_unavailable
+            expected_openrouter_attempts: "1"
+            expected_gemini_attempts: "0"
+          - scenario: openrouter_retry_then_success
+            mode: automatic
             fork_pr: "false"
             review_enabled: "true"
             pat_available: "true"
-            openai_present: "true"
-            openai_result: "failed"
+            openrouter_present: "true"
+            openrouter_result: "completed_retry"
+            gemini_present: "true"
+            gemini_result: "completed"
+            expected_final_comment: "true"
+            expected_manual_trigger_comment: "false"
+            expected_comment_publisher: "github_token"
+            expected_review_provider: "openrouter"
+            expected_review_status: "completed"
+            expected_openrouter_attempts: "2"
+            expected_gemini_attempts: "0"
+          - scenario: openrouter_fallback_to_gemini
+            mode: automatic
+            fork_pr: "false"
+            review_enabled: "true"
+            pat_available: "true"
+            openrouter_present: "true"
+            openrouter_result: "failed"
+            gemini_present: "true"
+            gemini_result: "completed"
+            expected_final_comment: "true"
+            expected_manual_trigger_comment: "false"
+            expected_comment_publisher: "github_token"
+            expected_review_provider: "gemini"
+            expected_review_status: "completed"
+            expected_openrouter_attempts: "2"
+            expected_gemini_attempts: "1"
+          - scenario: providers_unavailable
+            mode: automatic
+            fork_pr: "false"
+            review_enabled: "true"
+            pat_available: "true"
             openrouter_present: "false"
             openrouter_result: "failed"
+            gemini_present: "false"
+            gemini_result: "failed"
             expected_final_comment: "true"
-            expected_comment_publisher: "maintainer_pat"
+            expected_manual_trigger_comment: "false"
+            expected_comment_publisher: "github_token"
             expected_review_provider: "none"
-            expected_review_status: "fallback_human"
+            expected_review_status: "fallback_advisory"
+            expected_openrouter_attempts: "0"
+            expected_gemini_attempts: "0"
           - scenario: fork_pr
+            mode: automatic
             fork_pr: "true"
             review_enabled: "true"
             pat_available: "true"
-            openai_present: "true"
-            openai_result: "completed"
             openrouter_present: "true"
             openrouter_result: "completed"
+            gemini_present: "true"
+            gemini_result: "completed"
             expected_final_comment: "false"
+            expected_manual_trigger_comment: "false"
             expected_comment_publisher: "none"
             expected_review_provider: "none"
             expected_review_status: "skipped"
-          - scenario: happy_path
+            expected_openrouter_attempts: "0"
+            expected_gemini_attempts: "0"
+          - scenario: manual_codex_label
+            mode: manual
             fork_pr: "false"
             review_enabled: "true"
             pat_available: "true"
-            openai_present: "true"
-            openai_result: "completed"
             openrouter_present: "true"
             openrouter_result: "completed"
-            expected_final_comment: "true"
+            gemini_present: "true"
+            gemini_result: "completed"
+            label_name: "codex-review"
+            expected_final_comment: "false"
+            expected_manual_trigger_comment: "true"
             expected_comment_publisher: "maintainer_pat"
-            expected_review_provider: "openai"
-            expected_review_status: "completed"
+            expected_review_provider: "none"
+            expected_review_status: "manual_codex_requested"
+            expected_openrouter_attempts: "0"
+            expected_gemini_attempts: "0"
 
     steps:
       - name: Checkout repository
@@ -99,13 +136,15 @@ jobs:
       - name: Run codex-review smoke scenario
         env:
           SCENARIO: ${{ matrix.scenario }}
+          MODE: ${{ matrix.mode }}
           FORK_PR: ${{ matrix.fork_pr }}
           CODEX_REVIEW_ENABLED: ${{ matrix.review_enabled }}
           PAT_AVAILABLE: ${{ matrix.pat_available }}
-          OPENAI_PRESENT: ${{ matrix.openai_present }}
-          OPENAI_RESULT: ${{ matrix.openai_result }}
           OPENROUTER_PRESENT: ${{ matrix.openrouter_present }}
           OPENROUTER_RESULT: ${{ matrix.openrouter_result }}
+          GEMINI_PRESENT: ${{ matrix.gemini_present }}
+          GEMINI_RESULT: ${{ matrix.gemini_result }}
+          LABEL_NAME: ${{ matrix.label_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -114,9 +153,12 @@ jobs:
       - name: Assert expected smoke path
         env:
           EXPECTED_FINAL_COMMENT: ${{ matrix.expected_final_comment }}
+          EXPECTED_MANUAL_TRIGGER_COMMENT: ${{ matrix.expected_manual_trigger_comment }}
           EXPECTED_COMMENT_PUBLISHER: ${{ matrix.expected_comment_publisher }}
           EXPECTED_REVIEW_PROVIDER: ${{ matrix.expected_review_provider }}
           EXPECTED_REVIEW_STATUS: ${{ matrix.expected_review_status }}
+          EXPECTED_OPENROUTER_ATTEMPTS: ${{ matrix.expected_openrouter_attempts }}
+          EXPECTED_GEMINI_ATTEMPTS: ${{ matrix.expected_gemini_attempts }}
         shell: bash
         run: |
           set -euo pipefail
@@ -124,6 +166,9 @@ jobs:
           log_path="$RUNNER_TEMP/codex-review-smoke.log"
 
           grep -q "^FINAL_COMMENT=${EXPECTED_FINAL_COMMENT}$" "$log_path"
+          grep -q "^MANUAL_TRIGGER_COMMENT=${EXPECTED_MANUAL_TRIGGER_COMMENT}$" "$log_path"
           grep -q "^COMMENT_PUBLISHER=${EXPECTED_COMMENT_PUBLISHER}$" "$log_path"
           grep -q "^REVIEW_PROVIDER=${EXPECTED_REVIEW_PROVIDER}$" "$log_path"
           grep -q "^REVIEW_STATUS=${EXPECTED_REVIEW_STATUS}$" "$log_path"
+          grep -q "^OPENROUTER_ATTEMPTS=${EXPECTED_OPENROUTER_ATTEMPTS}$" "$log_path"
+          grep -q "^GEMINI_ATTEMPTS=${EXPECTED_GEMINI_ATTEMPTS}$" "$log_path"
