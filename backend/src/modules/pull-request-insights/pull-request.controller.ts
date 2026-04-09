@@ -4,6 +4,7 @@ import type { ForgeOpsFastifyInstance } from '../../app/register-routes.js';
 import type { PullRequest } from './pull-request.entity.js';
 import type {
   PullRequestDetail,
+  PullRequestCodexReviewRequest,
   PullRequestService,
 } from './pull-request.service.js';
 
@@ -83,6 +84,19 @@ interface GetPullRequestDetailRoute extends RouteGenericInterface {
   Reply: PullRequestDetailResponse;
 }
 
+interface RequestPullRequestCodexReviewRoute extends RouteGenericInterface {
+  Params: {
+    repositoryId: string;
+    pullRequestId: string;
+  };
+  Reply: {
+    pullRequestId: string;
+    pullRequestNumber: number;
+    label: 'codex-review';
+    status: 'requested';
+  };
+}
+
 const toPullRequestResponse = (pullRequest: PullRequest): PullRequestResponse => {
   return {
     id: pullRequest.id,
@@ -125,6 +139,17 @@ const toPullRequestDetailResponse = (
   };
 };
 
+const toPullRequestCodexReviewRequestResponse = (
+  request: PullRequestCodexReviewRequest,
+) => {
+  return {
+    pullRequestId: request.pullRequestId,
+    pullRequestNumber: request.pullRequestNumber,
+    label: request.label,
+    status: request.status,
+  };
+};
+
 export const registerPullRequestRoutes = (
   app: ForgeOpsFastifyInstance,
   pullRequestService: PullRequestService,
@@ -163,6 +188,29 @@ export const registerPullRequestRoutes = (
       );
 
       return toPullRequestDetailResponse(detail);
+    },
+  );
+
+  app.post<RequestPullRequestCodexReviewRoute>(
+    '/api/v1/repositories/:repositoryId/pull-requests/:pullRequestId/codex-review-request',
+    {
+      config: {
+        access: 'protected',
+        requiredCapability: 'repositories:write',
+      },
+    },
+    async (request, reply) => {
+      const { repositoryId, pullRequestId } = pullRequestDetailParamsSchema.parse(
+        request.params,
+      );
+      const codexReviewRequest = await pullRequestService.requestCodexReviewById(
+        repositoryId,
+        pullRequestId,
+      );
+
+      return reply
+        .code(202)
+        .send(toPullRequestCodexReviewRequestResponse(codexReviewRequest));
     },
   );
 };
