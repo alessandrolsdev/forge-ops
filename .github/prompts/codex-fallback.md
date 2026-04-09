@@ -1,4 +1,4 @@
-Codex review automation tentou executar a revisao automatica, mas nao produziu um resultado utilizavel.
+A automacao de review complementar tentou executar a revisao automatica, mas nao produziu um resultado utilizavel.
 
 Motivo observado: {{reason}}
 
