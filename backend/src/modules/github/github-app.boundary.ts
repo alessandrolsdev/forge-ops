@@ -99,6 +99,10 @@ export interface GitHubAppBoundary {
     repository: GitHubRepositoryDescriptor,
     pullRequestNumber: number,
   ): Promise<GitHubPullRequestReviewCommentDescriptor[]>;
+  requestPullRequestCodexReview?(
+    repository: GitHubRepositoryDescriptor,
+    pullRequestNumber: number,
+  ): Promise<void>;
 }
 
 export interface GitHubAppStatus {

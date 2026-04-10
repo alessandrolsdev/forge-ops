@@ -12,6 +12,7 @@ O workflow `codex-review` adiciona uma camada advisory de revisao automatizada s
 
 Trigger:
 - `pull_request`
+- `pull_request_target`
 
 Eventos:
 - `opened`
@@ -22,7 +23,7 @@ Eventos:
 
 Restricoes:
 - apenas para PRs contra `main`
-- nao roda para PR draft
+- o review automatico nao roda para PR draft
 - ignora PRs de fork
 
 ## Permissoes
@@ -75,9 +76,11 @@ O fluxo automatico segue esta ordem:
 Comentario final do fluxo automatico:
 - sempre via `GITHUB_TOKEN`
 - sempre como bot
+- nunca chama `@codex review`
 
 Fluxo manual premium:
 - aplicar `label codex-review`
+- o frontend do ForgeOps pode solicitar a mesma label pelo backend
 - publicar `@codex review` como usuario real, se `CODEX_REVIEW_PAT` estiver disponivel
 
 ## Comportamento em fork PR
@@ -139,6 +142,18 @@ O workflow e desenhado para degradar sem quebrar o PR:
   tenta retry unico e depois passa para o proximo fallback
 - `CODEX_REVIEW_PAT` ausente ou invalido
   o fluxo automatico continua; apenas o gatilho manual do Codex fica indisponivel
+
+## Qualidade do review automatico
+
+Idioma e tratado como criterio brando:
+- portugues do Brasil continua preferencial
+- ingles tecnico pontual nao invalida um review util
+
+Falha dura acontece apenas quando houver:
+- erro real de API
+- resposta vazia
+- parse invalido
+- conteudo claramente nao publicavel
 
 ## Arquivos relacionados
 

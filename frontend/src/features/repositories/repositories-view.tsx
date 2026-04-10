@@ -277,6 +277,25 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     },
   });
 
+  const requestPullRequestCodexReviewMutation = useMutation({
+    mutationFn: () =>
+      client.requestPullRequestCodexReview(
+        accessToken,
+        selectedRepositoryId!,
+        selectedPullRequestId!,
+      ),
+    onSuccess: (request) => {
+      setStatusMessage(
+        `Manual Codex review requested for PR #${request.pullRequestNumber} via label ${request.label}.`,
+      );
+    },
+    onError: (error) => {
+      setStatusMessage(
+        getErrorMessage(error, 'Unable to request a manual Codex review right now.'),
+      );
+    },
+  });
+
   const monitoredRepositoryNames = new Set(
     monitoredRepositories.map((repository) => repository.fullName),
   );
@@ -583,6 +602,17 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
           <p className="empty-state">Pull request detail is unavailable.</p>
         ) : (
           <div className="workflow-run-detail">
+            <div className="workflow-runs-list__actions">
+              <Button
+                onClick={() => requestPullRequestCodexReviewMutation.mutate()}
+                disabled={requestPullRequestCodexReviewMutation.isPending}
+              >
+                {requestPullRequestCodexReviewMutation.isPending
+                  ? 'Requesting Codex review...'
+                  : 'Request Codex review'}
+              </Button>
+            </div>
+
             <div className="workflow-runs-list__meta">
               <span className="repository-list__badge repository-list__badge--neutral">
                 status: {pullRequestDetail.status}

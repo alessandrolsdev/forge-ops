@@ -12,8 +12,8 @@ O `codex-review` e um workflow advisory de revisao automatizada para pull reques
 4. O workflow resolve a configuracao automatica:
    - `CODEX_REVIEW_ENABLED`
    - `OPENROUTER_API_KEY`
-   - `OPENROUTER_MODEL`
    - `GEMINI_API_KEY` ou `GOOGLE_API_KEY`
+   - `OPENROUTER_MODEL`
    - `GEMINI_MODEL`
 5. O workflow coleta contexto do PR:
    - titulo
@@ -28,6 +28,7 @@ O `codex-review` e um workflow advisory de revisao automatizada para pull reques
 11. O comentario final do fluxo automatico sempre e publicado via `GITHUB_TOKEN`, preservando o bot como autor.
 12. O Codex fica reservado para o fluxo manual premium:
     - o usuario aplica a label `codex-review`
+    - o frontend do ForgeOps pode solicitar essa mesma label pelo backend
     - o workflow publica `@codex review` como usuario real quando `CODEX_REVIEW_PAT` estiver disponivel e valido
 
 ## Decisoes arquiteturais
@@ -70,15 +71,16 @@ As instrucoes e mensagens do workflow ficam em `.github/prompts/` para manter:
 
 Ordem de tentativa atual:
 
-1. OpenRouter
-2. Retry unico via OpenRouter
-3. Gemini 2.5 Flash
-4. Retry unico via Gemini 2.5 Flash
-5. Comentario final advisory
-6. Codex manual por `label codex-review`
+1. Review automatizado via OpenRouter
+2. Retry unico da OpenRouter
+3. Review automatizado via Gemini 2.5 Flash
+4. Retry unico do Gemini
+5. Comentario final advisory via bot
+6. Codex apenas no fluxo manual por label `codex-review`
 
 Isso permite combinar:
-- review automatizado de baixo custo por API
+- review automatizado por API com custo mais baixo
+- fallback resiliente entre providers
 - transparencia quando nenhum caminho produz saida util
 - Codex reservado para revisoes manuais de maior valor
 

@@ -38,6 +38,7 @@ describe('RepositoriesView', () => {
       }),
       getWorkflowRuns: vi.fn(),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -182,6 +183,7 @@ describe('RepositoriesView', () => {
         },
         jobs: [],
       }),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository,
     };
 
@@ -257,6 +259,7 @@ describe('RepositoriesView', () => {
       }),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -300,6 +303,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -337,6 +341,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -378,6 +383,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -461,6 +467,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail,
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -493,6 +500,88 @@ describe('RepositoriesView', () => {
       'repo_123',
       'pr_123',
     );
+  });
+
+  it('should request a manual Codex review from the pull request detail view', async () => {
+    const requestPullRequestCodexReview = vi
+      .fn<ForgeOpsApiClient['requestPullRequestCodexReview']>()
+      .mockResolvedValue({
+        pullRequestId: 'pr_123',
+        pullRequestNumber: 42,
+        label: 'codex-review',
+        status: 'requested',
+      });
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories: vi.fn().mockResolvedValue([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getRepositoryDiscovery: vi.fn().mockResolvedValue([]),
+      getRepositoryWorkflows: vi.fn().mockResolvedValue([]),
+      getPullRequests: vi.fn().mockResolvedValue([
+        {
+          id: 'pr_123',
+          githubPrId: '987654321',
+          number: 42,
+          title: 'Add pull request insights',
+          state: 'open',
+          author: 'alessandrolsdev',
+          baseBranch: 'main',
+          headBranch: 'feature/pull-request-insights',
+          createdAt: '2026-03-31T18:20:00.000Z',
+          updatedAt: '2026-03-31T18:20:00.000Z',
+        },
+      ]),
+      getPullRequestDetail: vi.fn().mockResolvedValue({
+        id: 'pr_123',
+        number: 42,
+        title: 'Add pull request insights',
+        status: 'open',
+        author: 'alessandrolsdev',
+        summary: null,
+        workflows: [],
+      }),
+      getWorkflowRuns: vi.fn().mockResolvedValue([]),
+      getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview,
+      createRepository: vi.fn(),
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Request Codex review' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Request Codex review' }));
+
+    await waitFor(() => {
+      expect(requestPullRequestCodexReview).toHaveBeenCalledWith(
+        'trusted-token',
+        'repo_123',
+        'pr_123',
+      );
+      expect(
+        screen.getByText(
+          'Manual Codex review requested for PR #42 via label codex-review.',
+        ),
+      ).toBeInTheDocument();
+    });
   });
 
   it('should render pull request detail loading state', async () => {
@@ -530,6 +619,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn().mockImplementation(() => new Promise(() => undefined)),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -596,6 +686,7 @@ describe('RepositoriesView', () => {
       }),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -657,6 +748,7 @@ describe('RepositoriesView', () => {
         .mockRejectedValue(new ApiClientError('Pull request detail is unavailable.', 503)),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -714,6 +806,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockImplementation(() => new Promise(() => undefined)),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -763,6 +856,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -816,6 +910,7 @@ describe('RepositoriesView', () => {
         .fn()
         .mockRejectedValue(new ApiClientError('Workflow runs are currently unavailable.', 503)),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -914,6 +1009,7 @@ describe('RepositoriesView', () => {
         },
       ]),
       getWorkflowRunDetail,
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -994,6 +1090,7 @@ describe('RepositoriesView', () => {
         },
       ]),
       getWorkflowRunDetail: vi.fn().mockImplementation(() => new Promise(() => undefined)),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -1082,6 +1179,7 @@ describe('RepositoriesView', () => {
         },
         jobs: [],
       }),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -1156,6 +1254,7 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi
         .fn()
         .mockRejectedValue(new ApiClientError('Workflow run detail is unavailable.', 503)),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -1242,6 +1341,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository,
     };
 
@@ -1288,6 +1388,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn(),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
@@ -1340,6 +1441,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi
         .fn()
         .mockRejectedValue(
@@ -1393,6 +1495,7 @@ describe('RepositoriesView', () => {
       getPullRequestDetail: vi.fn(),
       getWorkflowRuns: vi.fn().mockResolvedValue([]),
       getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
     };
 
