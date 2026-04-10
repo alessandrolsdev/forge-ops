@@ -7,7 +7,6 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-      - labeled
     branches:
       - main
 
@@ -17,13 +16,13 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: codex-review-${{ github.event.pull_request.number }}
+  group: ${{ format('codex-review-auto-{0}', github.event.pull_request.number) }}
   cancel-in-progress: true
 
 jobs:
   codex-review:
     name: codex-review
-    if: ${{ !github.event.pull_request.draft && github.event.action != 'labeled' }}
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -603,178 +602,4 @@ jobs:
           set -e
           if [ "$post_status" -ne 0 ]; then
             echo "Unable to create final status comment."
-          fi
-
-  manual-codex-review:
-    name: manual-codex-review
-    if: ${{ !github.event.pull_request.draft && github.event.action == 'labeled' && github.event.label.name == 'codex-review' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Skip fork pull requests
-        if: ${{ github.event.pull_request.head.repo.fork }}
-        run: |
-          echo "Manual Codex review is skipped for fork pull requests to avoid exposing review automation to untrusted contexts."
-
-      - name: Check manual review configuration
-        id: manual-config
-        if: ${{ !github.event.pull_request.head.repo.fork }}
-        env:
-          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -n "${CODEX_REVIEW_PAT:-}" ]; then
-            echo "pat_present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "pat_present=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Resolve commenter identity
-        id: commenter
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.manual-config.outputs.pat_present == 'true' }}
-        env:
-          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          response_path="$RUNNER_TEMP/codex-review/commenter.json"
-          mkdir -p "$(dirname "$response_path")"
-          http_status=$(
-            curl -s \
-              -o "$response_path" \
-              -w "%{http_code}" \
-              -H "Authorization: token ${CODEX_REVIEW_PAT}" \
-              -H "Accept: application/vnd.github+json" \
-              https://api.github.com/user \
-              || true
-          )
-
-          if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
-            login=$(jq -r '.login // empty' "$response_path" 2>/dev/null || true)
-          else
-            login=""
-          fi
-
-          if [ -z "$login" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "login=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "available=true" >> "$GITHUB_OUTPUT"
-          echo "login=$login" >> "$GITHUB_OUTPUT"
-
-      - name: Collect pull request context
-        id: pr-context
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.commenter.outputs.available == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          output_dir="$RUNNER_TEMP/codex-review"
-          pr_json_path="$output_dir/pr.json"
-          pr_number=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
-          pr_sha=$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")
-
-          mkdir -p "$output_dir"
-
-          jq -n \
-            --arg sha "$pr_sha" \
-            --argjson number "$pr_number" \
-            '{
-              sha: $sha,
-              number: $number
-            }' > "$pr_json_path"
-
-          echo "context_dir=$output_dir" >> "$GITHUB_OUTPUT"
-
-      - name: Publish manual Codex trigger comment as maintainer
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.commenter.outputs.available == 'true' }}
-        env:
-          CODEX_REVIEW_PAT: ${{ secrets.CODEX_REVIEW_PAT }}
-          COMMENTER_LOGIN: ${{ steps.commenter.outputs.login }}
-          PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          marker=$(cat "$GITHUB_WORKSPACE/.github/prompts/codex-comment-marker.txt")
-          pr_number=$(jq -r '.number' "$PR_CONTEXT_DIR/pr.json")
-          pr_sha=$(jq -r '.sha' "$PR_CONTEXT_DIR/pr.json")
-          comments_url="${{ github.api_url }}/repos/${{ github.repository }}/issues/$pr_number/comments"
-          comment_body_path="$RUNNER_TEMP/codex-review/manual-trigger-comment.md"
-
-          {
-            printf '%s\n' "$marker"
-            printf '@codex review\n\n'
-            printf 'Solicitacao manual de revisao premium do Codex para o commit %s via label `codex-review`.\n\n' "$pr_sha"
-            printf 'Foque em arquitetura, riscos, testes e seguranca.\n'
-          } > "$comment_body_path"
-
-          set +e
-          comments_payload=$(
-            curl -s \
-              -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
-              -H "Accept: application/vnd.github+json" \
-              "$comments_url?per_page=100" \
-          )
-          comments_status=$?
-          set -e
-
-          if [ "$comments_status" -ne 0 ]; then
-            echo "Skipping manual Codex trigger comment update because GitHub comment listing failed."
-            exit 0
-          fi
-
-          existing_comment_id=$(
-            printf '%s' "$comments_payload" \
-              | jq -r --arg login "$COMMENTER_LOGIN" --arg marker "$marker" '
-                  .[]
-                  | select(.user.login == $login and ((.body // "") | contains($marker)))
-                  | .id
-                ' \
-              | head -n 1
-          )
-
-          if [ -n "$existing_comment_id" ]; then
-            set +e
-            jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-              | curl -s -X PATCH \
-                  "${{ github.api_url }}/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
-                  -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
-                  -H "Accept: application/vnd.github+json" \
-                  -H "Content-Type: application/json" \
-                  --data @- \
-                  > /dev/null
-            patch_status=$?
-            set -e
-            if [ "$patch_status" -ne 0 ]; then
-              echo "Skipping manual Codex trigger comment patch because GitHub patch request failed."
-            fi
-            exit 0
-          fi
-
-          set +e
-          jq -n --rawfile body "$comment_body_path" '{body: $body}' \
-            | curl -s -X POST \
-                "$comments_url" \
-                -H "Authorization: Bearer $CODEX_REVIEW_PAT" \
-                -H "Accept: application/vnd.github+json" \
-                -H "Content-Type: application/json" \
-                --data @- \
-                > /dev/null
-          post_status=$?
-          set -e
-          if [ "$post_status" -ne 0 ]; then
-            echo "Skipping manual Codex trigger comment creation because GitHub post request failed."
           fi
