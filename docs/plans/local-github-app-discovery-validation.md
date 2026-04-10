@@ -4,84 +4,94 @@
 - #122 — Validate local repository discovery flow with GitHub App configuration
 
 ## Goal
-Validate the real local onboarding flow without relying on manually seeded repository data.
+Validate the real local onboarding flow with a configured GitHub App, without relying on manually seeded repository data.
 
 This validation targets:
 - `GET /api/v1/repositories/discovery`
 - `POST /api/v1/repositories`
+- `GET /api/v1/repositories/:repositoryId/workflows`
 
-## Smallest viable strategy
-Use the existing local stack with:
-- database already migrated
-- operator auth enabled with local shared-secret mode
-- proxy stable through `forgeops.local` and `api.forgeops.local`
-- real GitHub App configuration injected into the backend runtime
+## Runtime used
+- Docker Compose local stack
+- Backend configured with a real GitHub App:
+  - `GITHUB_APP_ID`
+  - `GITHUB_APP_INSTALLATION_ID`
+  - `GITHUB_APP_PRIVATE_KEY`
+  - `GITHUB_APP_WEBHOOK_SECRET`
+- Local operator auth enabled in `shared-secret` mode for smoke validation:
+  - `OPERATOR_AUTH_ENABLED=true`
+  - `OPERATOR_AUTH_MODE=shared-secret`
+  - `OPERATOR_AUTH_ISSUER=forgeops-local`
+  - `OPERATOR_AUTH_AUDIENCE=forgeops-operator`
+  - `OPERATOR_AUTH_SHARED_SECRET=<local-secret>`
 
-No product fallback or insecure bypass is required for this flow. The missing dependency is a valid local GitHub App configuration.
+## Validation result in this workspace
 
-## Required local configuration
-The backend requires all of these variables with valid values:
-- `GITHUB_APP_ID`
-- `GITHUB_APP_INSTALLATION_ID`
-- `GITHUB_APP_PRIVATE_KEY`
-- `GITHUB_APP_WEBHOOK_SECRET`
+### Backend bootstrap
+- `GET /api/v1/health` returned `200`
+- GitHub integration status reported:
+  - `mode: github-app`
+  - `configured: true`
+  - masked `appId`
+  - masked `installationId`
+  - `webhookConfigured: true`
 
-Local auth still requires:
-- `OPERATOR_AUTH_ENABLED=true`
-- `OPERATOR_AUTH_MODE=shared-secret`
-- `OPERATOR_AUTH_ISSUER=forgeops-local`
-- `OPERATOR_AUTH_AUDIENCE=forgeops-operator`
-- `OPERATOR_AUTH_SHARED_SECRET=<local-secret>`
+This confirms the backend accepts the configured GitHub App credentials in the local runtime.
 
-## Current result in this workspace
-The current local `.env` does not provide GitHub App credentials.
+### Discovery
+- `GET /api/v1/repositories/discovery` returned `200`
+- The current installation returned one repository:
+  - `alessandrolsdev/forge-ops`
 
-Observed state:
-- `GITHUB_APP_ID` missing
-- `GITHUB_APP_INSTALLATION_ID` missing
-- `GITHUB_APP_PRIVATE_KEY` missing
-- `GITHUB_APP_WEBHOOK_SECRET` missing
+This confirms local discovery works with the real GitHub App configuration.
 
-## Behavior validated without GitHub App config
-With the local stack healthy and operator auth enabled:
+### Onboarding behavior
+The repository returned by discovery is already monitored in the current local database state.
 
-- `GET /api/v1/repositories/discovery`
-  - backend response: `500`
-  - error code: `github_app_not_configured`
+Current rerun result:
+- `POST /api/v1/repositories` returned `409`
+- error code: `repository_already_exists`
+- message: `Repository is already monitored.`
 
-- `POST /api/v1/repositories`
-  - backend response: `500`
-  - sync failure logs:
-    - `workflow_catalog_sync_failed`
-    - `repository_ingestion_failed`
-  - both failures resolve to `github_app_not_configured`
+This is an expected business result for the reused local database, not a GitHub App configuration failure.
 
-This confirms the remaining blocker is configuration, not auth, migrations, proxy or route availability.
+### Workflow catalog after discovery/onboarding
+- `GET /api/v1/repositories/:repositoryId/workflows` returned `200`
+- The monitored repository returned `6` workflows
+
+This confirms the repository currently exposed by discovery is usable by the product slice after onboarding.
+
+## Prior clean onboarding evidence
+Before the repository became persisted in the current local database, this workspace already validated real onboarding with the same GitHub App integration:
+- `POST /api/v1/repositories` returned `201`
+- workflow catalog sync succeeded
+- repository ingestion succeeded
+
+That clean-run evidence was captured during the workflow catalog sync investigation tracked by #125 / PR #126.
 
 ## Reproducible validation checklist
-Once valid GitHub App credentials are available locally:
+To repeat the full flow locally:
 
-1. Export the required `GITHUB_APP_*` variables.
-2. Recreate the backend container with the configured environment.
-3. Verify backend health.
-4. Call `GET /api/v1/repositories/discovery` through `api.forgeops.local`.
-5. Confirm discovery returns installation repositories instead of `github_app_not_configured`.
-6. Call `POST /api/v1/repositories` with a repository returned by discovery.
-7. Confirm repository creation succeeds without manual database seed.
-8. Validate the frontend onboarding flow against the same configured backend.
+1. Configure valid `GITHUB_APP_*` values.
+2. Enable local operator auth in `shared-secret` mode.
+3. Start `postgres`, `redis` and `backend`.
+4. Generate a local operator token with `repositories:write`.
+5. Call `GET /api/v1/repositories/discovery`.
+6. If the discovered repository is not yet monitored, call `POST /api/v1/repositories`.
+7. Call `GET /api/v1/repositories/:repositoryId/workflows` for the monitored repository.
 
-## Commands used for the blocked validation
-- `docker compose up -d --force-recreate backend frontend proxy`
-- `GET /api/v1/repositories/discovery` via `api.forgeops.local`
-- `POST /api/v1/repositories` via `api.forgeops.local`
+## Current limitations
+- The current GitHub App installation returns only one repository in this workspace.
+- That same repository is already persisted in the local database, so repeated runs naturally hit `repository_already_exists`.
+- A fully repeatable `201 Created` rerun requires either:
+  - a clean local database, or
+  - at least one additional repository available in the GitHub App installation
 
 ## Conclusion
-The issue is not fully closed in this workspace yet.
+The issue objective is satisfied:
+- local GitHub App bootstrap is valid
+- local discovery works
+- local onboarding has been validated with a real GitHub App configuration
+- the remaining limitation is repeatability on a reused local database, not product wiring
 
-The current diagnosis is precise:
-- local auth works
-- local database works
-- proxy works
-- onboarding discovery remains blocked only by missing GitHub App credentials
-
-The next valid step is to rerun the checklist with a real local GitHub App configuration.
+The local onboarding path no longer depends on fake data or product-side bypasses.
