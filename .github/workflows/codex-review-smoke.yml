@@ -10,6 +10,7 @@ on:
       - fix/**
     paths:
       - .github/workflows/codex-review.yml
+      - .github/workflows/manual-codex-review.yml
       - .github/workflows/codex-review-smoke.yml
       - .github/prompts/codex-review.md
       - .github/prompts/codex-fallback.md
