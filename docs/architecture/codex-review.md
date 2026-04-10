@@ -7,7 +7,7 @@ O `codex-review` e um workflow advisory de revisao automatizada para pull reques
 ## Fluxo completo
 
 1. Um PR nao-draft e aberto, atualizado ou marcado como pronto para review contra `main`.
-2. O workflow `codex-review` dispara no GitHub Actions.
+2. O workflow automatico `codex-review` dispara no GitHub Actions.
 3. PRs de fork sao ignorados para nao expor automacao a contexto nao confiavel.
 4. O workflow resolve a configuracao automatica:
    - `CODEX_REVIEW_ENABLED`
@@ -26,7 +26,7 @@ O `codex-review` e um workflow advisory de revisao automatizada para pull reques
 9. Se Gemini falhar ou nao gerar conteudo publicavel, o workflow faz um retry unico.
 10. Se nenhum provider gerar texto publicavel, o workflow publica um comentario advisory explicando o motivo observado.
 11. O comentario final do fluxo automatico sempre e publicado via `GITHUB_TOKEN`, preservando o bot como autor.
-12. O Codex fica reservado para o fluxo manual premium:
+12. O Codex fica reservado para o workflow manual premium `manual-codex-review`:
     - o usuario aplica a label `codex-review`
     - o frontend do ForgeOps pode solicitar essa mesma label pelo backend
     - o workflow publica `@codex review` como usuario real quando `CODEX_REVIEW_PAT` estiver disponivel e valido
@@ -36,6 +36,10 @@ O `codex-review` e um workflow advisory de revisao automatizada para pull reques
 ### Codex fora do fluxo automatico
 
 O Codex nao roda mais automaticamente no review padrao. Isso reduz custo e mantem o fluxo automatico com providers mais baratos antes do fallback advisory.
+
+### Workflow manual separado do automatico
+
+O evento `pull_request:labeled` fica isolado em um workflow proprio. Isso evita que labels operacionais comuns gerem runs extras no workflow automatico e garante que o primeiro review OpenRouter ou Gemini comece assim que a PR entra no fluxo normal.
 
 ### PAT opcional para fluxo manual premium
 
@@ -76,7 +80,7 @@ Ordem de tentativa atual:
 3. Review automatizado via Gemini 2.5 Flash
 4. Retry unico do Gemini
 5. Comentario final advisory via bot
-6. Codex apenas no fluxo manual por label `codex-review`
+6. Codex apenas no workflow manual por label `codex-review`
 
 Isso permite combinar:
 - review automatizado por API com custo mais baixo

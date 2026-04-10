@@ -1,8 +1,8 @@
-# Workflow `codex-review`
+# Workflows de review automatizado
 
 ## Objetivo
 
-O workflow `codex-review` adiciona uma camada advisory de revisao automatizada sobre pull requests para `main`, combinando:
+Os workflows de review adicionam uma camada advisory de revisao automatizada sobre pull requests para `main`, combinando:
 - review automatizado barato por API
 - fallback entre providers
 - comentario final transparente quando nenhum review util e produzido
@@ -10,16 +10,16 @@ O workflow `codex-review` adiciona uma camada advisory de revisao automatizada s
 
 ## Quando dispara
 
-Trigger:
-- `pull_request`
-- `pull_request_target`
+Workflow automatico:
+- `.github/workflows/codex-review.yml`
+- trigger `pull_request`
+- eventos `opened`, `synchronize`, `reopened`, `ready_for_review`
 
-Eventos:
-- `opened`
-- `synchronize`
-- `reopened`
-- `ready_for_review`
-- `labeled`
+Workflow manual premium:
+- `.github/workflows/manual-codex-review.yml`
+- trigger `pull_request`
+- evento `labeled`
+- executa apenas quando `github.event.label.name == 'codex-review'`
 
 Restricoes:
 - apenas para PRs contra `main`
@@ -91,7 +91,7 @@ Motivo:
 - nao expor automacao e secrets a contexto nao confiavel
 - manter principio de menor privilegio
 
-## Estrutura de alto nivel do job
+## Estrutura de alto nivel dos jobs
 
 ### Fluxo automatico
 
@@ -157,7 +157,8 @@ Falha dura acontece apenas quando houver:
 
 ## Arquivos relacionados
 
-- workflow principal: `.github/workflows/codex-review.yml`
+- workflow automatico: `.github/workflows/codex-review.yml`
+- workflow manual: `.github/workflows/manual-codex-review.yml`
 - smoke coverage: `.github/workflows/codex-review-smoke.yml`
 - smoke logic: `.github/scripts/codex-review-smoke.sh`
 - prompt principal: `.github/prompts/codex-review.md`
