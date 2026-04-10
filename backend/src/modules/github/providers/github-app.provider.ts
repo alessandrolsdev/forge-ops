@@ -17,6 +17,7 @@ import { ConfigurationError } from '../../../shared/errors/configuration-error.j
 import {
   GitHubRepositoryDiscoveryError,
   GitHubPullRequestSyncError,
+  GitHubPullRequestReviewRequestError,
   GitHubPullRequestReviewSyncError,
   GitHubWorkflowCatalogSyncError,
   GitHubWorkflowRunsSyncError,
@@ -125,11 +126,18 @@ const githubPullRequestReviewCommentsSchema = z.array(
   }),
 );
 
+const githubIssueLabelsSchema = z.array(
+  z.object({
+    name: z.string().trim().min(1),
+  }),
+);
+
 const GITHUB_API_VERSION = '2022-11-28';
 const DEFAULT_GITHUB_API_BASE_URL = 'https://api.github.com';
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_GITHUB_ERROR_MESSAGE = 'GitHub request failed.';
 const MAX_GITHUB_ERROR_MESSAGE_LENGTH = 200;
+const MANUAL_CODEX_REVIEW_LABEL = 'codex-review';
 
 export interface GitHubAppProviderOptions {
   apiBaseUrl?: string;
@@ -396,6 +404,45 @@ export class GitHubAppProvider implements GitHubAppBoundary {
       }
 
       throw new GitHubPullRequestReviewSyncError();
+    }
+  }
+
+  public async requestPullRequestCodexReview(
+    repository: GitHubRepositoryDescriptor,
+    pullRequestNumber: number,
+  ): Promise<void> {
+    this.assertConfigured();
+
+    try {
+      const installationToken = await this.createInstallationAccessToken();
+
+      await this.requestJson(
+        `${this.apiBaseUrl}/repos/${repository.owner}/${repository.name}/issues/${pullRequestNumber}/labels`,
+        {
+          method: 'POST',
+          headers: {
+            ...this.createJsonHeaders(`Bearer ${installationToken}`),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            labels: [MANUAL_CODEX_REVIEW_LABEL],
+          }),
+        },
+        githubIssueLabelsSchema,
+      );
+    } catch (error) {
+      if (
+        error instanceof ConfigurationError ||
+        error instanceof GitHubPullRequestReviewRequestError
+      ) {
+        throw error;
+      }
+
+      if (error instanceof GitHubApiRequestError) {
+        throw new GitHubPullRequestReviewRequestError(error.details);
+      }
+
+      throw new GitHubPullRequestReviewRequestError();
     }
   }
 

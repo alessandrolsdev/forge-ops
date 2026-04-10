@@ -54,6 +54,17 @@ export class GitHubPullRequestReviewSyncError extends ApplicationError {
   }
 }
 
+export class GitHubPullRequestReviewRequestError extends ApplicationError {
+  constructor(details: ApplicationErrorDetails | null = null) {
+    super(
+      'GitHub manual Codex review request is currently unavailable.',
+      503,
+      'github_pull_request_review_request_unavailable',
+      details,
+    );
+  }
+}
+
 export class GitHubWebhookVerificationError extends ApplicationError {
   constructor() {
     super(

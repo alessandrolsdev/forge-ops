@@ -144,6 +144,13 @@ const pullRequestDetailResponseSchema = z.object({
   ),
 });
 
+const requestPullRequestCodexReviewResponseSchema = z.object({
+  pullRequestId: z.string().min(1),
+  pullRequestNumber: z.number().int().positive(),
+  label: z.literal('codex-review'),
+  status: z.literal('requested'),
+});
+
 const workflowRunItemSchema = z.object({
   id: z.string().min(1),
   workflowId: z.string().min(1),
@@ -212,6 +219,9 @@ export type CreateRepositoryInput = z.infer<typeof createRepositoryInputSchema>;
 export type WorkflowCatalogItem = z.infer<typeof workflowCatalogItemSchema>;
 export type PullRequestItem = z.infer<typeof pullRequestItemSchema>;
 export type PullRequestDetailResponse = z.infer<typeof pullRequestDetailResponseSchema>;
+export type PullRequestCodexReviewRequestResponse = z.infer<
+  typeof requestPullRequestCodexReviewResponseSchema
+>;
 export type WorkflowRunItem = z.infer<typeof workflowRunItemSchema>;
 export type WorkflowRunJobItem = z.infer<typeof workflowRunJobItemSchema>;
 export type WorkflowRunDetailResponse = z.infer<typeof workflowRunDetailResponseSchema>;
@@ -248,6 +258,11 @@ export interface ForgeOpsApiClient {
     repositoryId: string,
     pullRequestId: string,
   ): Promise<PullRequestDetailResponse>;
+  requestPullRequestCodexReview(
+    accessToken: string,
+    repositoryId: string,
+    pullRequestId: string,
+  ): Promise<PullRequestCodexReviewRequestResponse>;
   getWorkflowRuns(
     accessToken: string,
     repositoryId: string,
@@ -384,6 +399,29 @@ export const createApiClient = (options: CreateApiClientOptions = {}): ForgeOpsA
       }
 
       return pullRequestDetailResponseSchema.parse(await response.json());
+    },
+
+    async requestPullRequestCodexReview(
+      accessToken: string,
+      repositoryId: string,
+      pullRequestId: string,
+    ): Promise<PullRequestCodexReviewRequestResponse> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/pull-requests/${pullRequestId}/codex-review-request`,
+        {
+          method: 'POST',
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to request Codex review (${response.status})`,
+        );
+      }
+
+      return requestPullRequestCodexReviewResponseSchema.parse(await response.json());
     },
 
     async getWorkflowRuns(
