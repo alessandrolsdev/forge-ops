@@ -112,6 +112,62 @@ describe('resolveRuntimeServerOptions', () => {
     await server.close();
   });
 
+  it('should keep CORS preflight available even when operator auth is not configured', async () => {
+    const server = createRuntimeTestServer({
+      NODE_ENV: 'test',
+      PORT: '3333',
+      LOG_LEVEL: 'silent',
+    });
+
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/repositories',
+      headers: {
+        origin: 'http://forgeops.local:8082',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://forgeops.local:8082',
+    );
+    expect(response.headers['access-control-allow-headers']).toContain('authorization');
+
+    await server.close();
+  });
+
+  it('should keep CORS headers on protected responses even when auth is not configured', async () => {
+    const server = createRuntimeTestServer({
+      NODE_ENV: 'test',
+      PORT: '3333',
+      LOG_LEVEL: 'silent',
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories',
+      headers: {
+        origin: 'http://forgeops.local:8082',
+        authorization: 'Bearer token',
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://forgeops.local:8082',
+    );
+    expect(response.json()).toEqual({
+      error: {
+        code: 'auth_not_configured',
+        message: 'Operator authentication is not configured.',
+      },
+    });
+
+    await server.close();
+  });
+
   it('should wire a runtime auth verifier when shared-secret auth is configured', async () => {
     const server = createRuntimeTestServer({
       NODE_ENV: 'test',
