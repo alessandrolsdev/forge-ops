@@ -43,7 +43,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: development
-      NEXT_PUBLIC_API_BASE_URL: http://api.forgeops.local
+      FORGEOPS_PROXY_PORT: ${FORGEOPS_PROXY_PORT:-80}
       WATCHPACK_POLLING: 'true'
       CHOKIDAR_USEPOLLING: 'true'
       NEXT_TELEMETRY_DISABLED: '1'

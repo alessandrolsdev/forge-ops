@@ -111,7 +111,7 @@ Variaveis locais principais:
 - `GITHUB_APP_PRIVATE_KEY`
 - `GITHUB_APP_WEBHOOK_SECRET`
 
-No modo Docker, `docker-compose.yml` sobrescreve `DATABASE_URL`, `REDIS_URL` e `NEXT_PUBLIC_API_BASE_URL` para usar service discovery e os dominios locais. O `.env` continua servindo como modo legado para execucao direta fora de containers.
+No modo Docker, `docker-compose.yml` sobrescreve `DATABASE_URL` e `REDIS_URL` para usar service discovery. O frontend containerizado deriva `NEXT_PUBLIC_API_BASE_URL` a partir de `FORGEOPS_PROXY_PORT`, mantendo `http://api.forgeops.local` quando a porta publicada e `80` e adicionando `:<porta>` quando o proxy local usa outra porta. O `.env` continua servindo como modo legado para execucao direta fora de containers.
 
 Configuracao do proxy local:
 - `TRAEFIK_DOCKER_PROVIDER_ENABLED=false`
@@ -145,13 +145,13 @@ docker compose up --build
 ```
 
 Servicos esperados:
-- frontend: `http://forgeops.local`
-- backend: `http://api.forgeops.local`
+- frontend: `http://forgeops.local` quando `FORGEOPS_PROXY_PORT=80`, ou `http://forgeops.local:<porta>` quando a porta publicada for diferente
+- backend: `http://api.forgeops.local` quando `FORGEOPS_PROXY_PORT=80`, ou `http://api.forgeops.local:<porta>` quando a porta publicada for diferente
 - proxy reverso: porta `80` apenas
 
 PostgreSQL e Redis permanecem acessiveis apenas na rede Docker durante o uso normal da aplicacao.
 
-Se a porta `80` ja estiver ocupada por outra stack local, ajuste apenas `FORGEOPS_PROXY_PORT` no `.env`. O roteamento continua o mesmo; muda apenas a porta publicada pelo proxy.
+Se a porta `80` ja estiver ocupada por outra stack local, ajuste apenas `FORGEOPS_PROXY_PORT` no `.env`. O roteamento continua o mesmo, muda apenas a porta publicada pelo proxy, e o frontend containerizado passa a embutir a base URL correta da API no bundle local.
 
 ### 4.1 Provider do Traefik: estavel vs. experimental
 

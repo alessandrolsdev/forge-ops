@@ -6,7 +6,7 @@ O ambiente local do ForgeOps usa Traefik como proxy reverso para expor:
 - `forgeops.local` -> frontend
 - `api.forgeops.local` -> backend
 
-O objetivo principal e manter uma experiencia container-first com porta externa unica, sem depender de `localhost:3000` e `localhost:3333` no fluxo normal.
+O objetivo principal e manter uma experiencia container-first com porta externa unica, sem depender de `localhost:3000` e `localhost:3333` no fluxo normal. A porta externa publicada continua configuravel por `FORGEOPS_PROXY_PORT`; quando ela nao for `80`, os hosts estaveis passam a ser acessados com `:<porta>`.
 
 ## Provider estavel
 
@@ -127,13 +127,21 @@ Esses hosts existem para validacao controlada do provider experimental. O trafeg
    - `TRAEFIK_DOCKER_PROVIDER_ENABLED=false`
    - `docker compose up --build`
 2. Confirmar rotas principais:
-   - `forgeops.local`
-   - `api.forgeops.local`
+   - `forgeops.local` ou `forgeops.local:<FORGEOPS_PROXY_PORT>`
+   - `api.forgeops.local` ou `api.forgeops.local:<FORGEOPS_PROXY_PORT>`
 3. Ativar o modo experimental:
    - `TRAEFIK_DOCKER_PROVIDER_ENABLED=true`
 4. Inspecionar logs:
    - `docker compose logs proxy`
 5. Verificar se o observer registra `healthy` ou `degraded`
+
+## Base URL publica do frontend
+
+No modo containerizado, o frontend resolve `NEXT_PUBLIC_API_BASE_URL` a partir da mesma porta publicada pelo proxy:
+- `FORGEOPS_PROXY_PORT=80` -> `http://api.forgeops.local`
+- `FORGEOPS_PROXY_PORT=8082` -> `http://api.forgeops.local:8082`
+
+Isso evita drift entre a porta publicada pelo Traefik e a URL embutida no bundle do frontend para chamadas protegidas do navegador.
 
 ## Evolucao futura
 
