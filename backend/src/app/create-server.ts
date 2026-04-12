@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { registerRoutes } from './register-routes.js';
 import type { AppEnv } from '../infra/config/app-env.js';
 import type { OperatorAuthEnv } from '../infra/config/auth-env.js';
@@ -30,6 +30,70 @@ import { CodexReviewSummaryService } from '../modules/pull-request-insights/code
 import type { CodexReviewSummaryRepository } from '../modules/pull-request-insights/codex-review-summary.repository.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
+const localCorsOrigins = [
+  /^http:\/\/forgeops\.local(?::\d+)?$/,
+  /^http:\/\/docker-frontend\.forgeops\.local(?::\d+)?$/,
+  /^http:\/\/localhost(?::\d+)?$/,
+];
+
+const isAllowedLocalCorsOrigin = (
+  origin: string | undefined,
+): origin is string => {
+  return typeof origin === 'string' && localCorsOrigins.some((pattern) => pattern.test(origin));
+};
+
+const appendVaryHeader = (reply: FastifyReply, value: string): void => {
+  const currentHeader = reply.getHeader('Vary');
+
+  if (typeof currentHeader !== 'string' || currentHeader.length === 0) {
+    reply.header('Vary', value);
+    return;
+  }
+
+  const values = currentHeader
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  if (!values.includes(value)) {
+    values.push(value);
+    reply.header('Vary', values.join(', '));
+  }
+};
+
+const applyLocalCorsHeaders = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+): void => {
+  const origin = request.headers.origin;
+
+  if (!isAllowedLocalCorsOrigin(origin)) {
+    return;
+  }
+
+  reply.header('Access-Control-Allow-Origin', origin);
+  appendVaryHeader(reply, 'Origin');
+};
+
+const applyLocalPreflightHeaders = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+): void => {
+  applyLocalCorsHeaders(request, reply);
+
+  const requestedHeaders = request.headers['access-control-request-headers'];
+
+  reply.header('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
+  reply.header(
+    'Access-Control-Allow-Headers',
+    typeof requestedHeaders === 'string' && requestedHeaders.trim().length > 0
+      ? requestedHeaders
+      : 'authorization, content-type',
+  );
+  reply.header('Access-Control-Max-Age', '600');
+  appendVaryHeader(reply, 'Access-Control-Request-Headers');
+};
+
 export interface CreateServerOptions {
   env: AppEnv;
   authConfig?: OperatorAuthEnv | null;
@@ -46,6 +110,20 @@ export interface CreateServerOptions {
 export const createServer = (options: CreateServerOptions) => {
   const app = Fastify({
     logger: createLogger(options.env.LOG_LEVEL),
+  });
+
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.method !== 'OPTIONS') {
+      return;
+    }
+
+    applyLocalPreflightHeaders(request, reply);
+    reply.status(204).send();
+  });
+
+  app.addHook('onSend', async (request, reply, payload) => {
+    applyLocalCorsHeaders(request, reply);
+    return payload;
   });
 
   app.decorateRequest('operatorPrincipal', null);
