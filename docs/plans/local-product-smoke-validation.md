@@ -18,6 +18,7 @@ Validate that the local ForgeOps stack can run the current product slice end to 
 - `OPERATOR_AUTH_MODE=shared-secret`
 - `OPERATOR_AUTH_ISSUER=forgeops-local`
 - `OPERATOR_AUTH_AUDIENCE=forgeops-operator`
+- frontend containerizado resolvendo `NEXT_PUBLIC_API_BASE_URL=http://api.forgeops.local:8082`
 
 ## Validation summary
 
@@ -93,8 +94,8 @@ The validated data came from the local smoke dataset already present in the data
 - codex review summary linked to the pull request
 
 ### Frontend through proxy
-- `GET /` via `forgeops.local` returned `200`
-- `GET /repositories` via `forgeops.local` returned `200`
+- `GET /` via `forgeops.local:8082` returned `200`
+- `GET /repositories` via `forgeops.local:8082` returned `200`
 
 ## Updated smoke validation with real onboarding token
 
