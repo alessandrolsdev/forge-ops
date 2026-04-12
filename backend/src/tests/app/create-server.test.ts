@@ -873,6 +873,52 @@ describe('createServer', () => {
     await server.close();
   });
 
+  it('should answer repository preflight requests without requiring operator auth', async () => {
+    const server = createProtectedServer({
+      repositories: [],
+    });
+
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/repositories',
+      headers: {
+        origin: 'http://forgeops.local:8082',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://forgeops.local:8082',
+    );
+    expect(response.headers['access-control-allow-headers']).toContain('authorization');
+
+    await server.close();
+  });
+
+  it('should include CORS headers on authenticated repository responses', async () => {
+    const server = createProtectedServer({
+      repositories: [],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories',
+      headers: {
+        origin: 'http://forgeops.local:8082',
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://forgeops.local:8082',
+    );
+
+    await server.close();
+  });
+
   it('should reject invalid repository payloads before service execution', async () => {
     const server = createProtectedServer();
 

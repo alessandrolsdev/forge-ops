@@ -40,6 +40,10 @@ export const createAuthGuard =
   async (request: FastifyRequest): Promise<void> => {
     request.operatorPrincipal = null;
 
+    if (request.method === 'OPTIONS') {
+      return;
+    }
+
     if (getAccessMode(request) === 'public') {
       return;
     }
