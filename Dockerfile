@@ -21,7 +21,7 @@ FROM workspace-base AS frontend-dev
 
 WORKDIR /workspace/frontend
 
-CMD ["node", "../scripts/run-bin.mjs", "next", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
+CMD ["node", "../scripts/start-frontend-dev.mjs"]
 
 FROM workspace-base AS backend-dev
 
