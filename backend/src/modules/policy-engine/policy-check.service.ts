@@ -7,6 +7,10 @@ import type { CodexReviewSummaryRepository } from '../pull-request-insights/code
 import type { PolicyCheck } from './policy-check.entity.js';
 import type { PolicyCheckRepository } from './policy-check.repository.js';
 import { evaluatePolicySignals } from './policy-signals.js';
+import {
+  noopSyncEventRecorder,
+  type SyncEventRecorder,
+} from '../audit-sync/sync-event.recorder.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 
@@ -20,6 +24,7 @@ export interface PolicyCheckServiceOptions {
   workflowRepository: WorkflowRepository;
   codexReviewSummaryRepository: CodexReviewSummaryRepository;
   policyCheckRepository: PolicyCheckRepository;
+  syncEventRecorder?: SyncEventRecorder;
   logger?: ServiceLogger;
 }
 
@@ -73,18 +78,26 @@ export class PolicyCheckService {
         );
       }
 
+      const compliantCount = policyChecks.filter(
+        (check) => check.status === 'compliant',
+      ).length;
+
       this.logger.info(
         {
           event: 'policy_evaluation_succeeded',
           repositoryId: repository.id,
           fullName: repository.fullName,
           policyCheckCount: policyChecks.length,
-          compliantCount: policyChecks.filter(
-            (check) => check.status === 'compliant',
-          ).length,
+          compliantCount,
         },
         'Policy evaluation completed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'policy_evaluation',
+        status: 'succeeded',
+        details: `${compliantCount} de ${policyChecks.length} politica(s) em conformidade.`,
+      });
 
       return policyChecks;
     } catch (error) {
@@ -97,6 +110,15 @@ export class PolicyCheckService {
         },
         'Policy evaluation failed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'policy_evaluation',
+        status: 'failed',
+        details:
+          error instanceof Error
+            ? `Avaliacao de politicas falhou: ${error.name}.`
+            : 'Avaliacao de politicas falhou.',
+      });
 
       throw error;
     }
@@ -115,6 +137,10 @@ export class PolicyCheckService {
 
   private get logger(): ServiceLogger {
     return this.options.logger ?? noopLogger;
+  }
+
+  private get syncEventRecorder(): SyncEventRecorder {
+    return this.options.syncEventRecorder ?? noopSyncEventRecorder;
   }
 }
 

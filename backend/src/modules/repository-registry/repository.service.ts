@@ -9,6 +9,10 @@ import type {
 } from '../github/github-app.boundary.js';
 import type { RepositoryRepository } from './repository.repository.js';
 import { ApplicationError } from '../../shared/errors/application-error.js';
+import {
+  noopSyncEventRecorder,
+  type SyncEventRecorder,
+} from '../audit-sync/sync-event.recorder.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 type WorkflowCatalogSync = {
@@ -32,6 +36,7 @@ export interface RepositoryServiceOptions {
   workflowCatalogSync?: WorkflowCatalogSync;
   workflowRunSync?: WorkflowRunSync;
   pullRequestSync?: PullRequestSync;
+  syncEventRecorder?: SyncEventRecorder;
   logger?: ServiceLogger;
 }
 
@@ -78,6 +83,12 @@ export class RepositoryService {
         },
         'Repository ingestion completed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'repository_connected',
+        status: 'succeeded',
+        details: `Repositorio ${repository.fullName} conectado e ingerido.`,
+      });
 
       return repository;
     } catch (error) {
@@ -106,6 +117,10 @@ export class RepositoryService {
 
   private get logger(): ServiceLogger {
     return this.options.logger ?? noopLogger;
+  }
+
+  private get syncEventRecorder(): SyncEventRecorder {
+    return this.options.syncEventRecorder ?? noopSyncEventRecorder;
   }
 
   private async rollbackRepository(repositoryId: string): Promise<void> {

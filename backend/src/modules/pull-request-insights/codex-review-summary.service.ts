@@ -11,6 +11,10 @@ import type { PullRequest } from './pull-request.entity.js';
 import type { PullRequestRepository } from './pull-request.repository.js';
 import type { CodexReviewSummary } from './codex-review-summary.entity.js';
 import type { CodexReviewSummaryRepository } from './codex-review-summary.repository.js';
+import {
+  noopSyncEventRecorder,
+  type SyncEventRecorder,
+} from '../audit-sync/sync-event.recorder.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 
@@ -24,6 +28,7 @@ export interface CodexReviewSummaryServiceOptions {
   pullRequestRepository: PullRequestRepository;
   codexReviewSummaryRepository: CodexReviewSummaryRepository;
   githubBoundary: GitHubAppBoundary;
+  syncEventRecorder?: SyncEventRecorder;
   logger?: ServiceLogger;
 }
 
@@ -141,6 +146,12 @@ export class CodexReviewSummaryService {
         },
         'Codex review summary sync completed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'codex_review_sync',
+        status: 'succeeded',
+        details: `Review do Codex sincronizado para o PR #${pullRequest.number} (${codexComments.length} comentario(s)).`,
+      });
 
       return persistedSummary;
     } catch (error) {
@@ -153,6 +164,12 @@ export class CodexReviewSummaryService {
         },
         'Codex review summary sync failed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: pullRequest.repositoryId,
+        type: 'codex_review_sync',
+        status: 'failed',
+        details: `Sincronizacao do review do Codex falhou para o PR #${pullRequest.number}.`,
+      });
 
       throw error;
     }
@@ -160,6 +177,10 @@ export class CodexReviewSummaryService {
 
   private get logger(): ServiceLogger {
     return this.options.logger ?? noopLogger;
+  }
+
+  private get syncEventRecorder(): SyncEventRecorder {
+    return this.options.syncEventRecorder ?? noopSyncEventRecorder;
   }
 }
 

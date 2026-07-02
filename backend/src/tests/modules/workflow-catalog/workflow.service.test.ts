@@ -267,4 +267,111 @@ describe('WorkflowService', () => {
     );
     expect(logger.info).not.toHaveBeenCalled();
   });
+
+  it('should record a sync event when the catalog sync succeeds', async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    const service = new WorkflowService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn().mockResolvedValue(buildWorkflow()),
+        listByRepositoryId: vi.fn().mockResolvedValue([buildWorkflow()]),
+        findById: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [
+          {
+            githubWorkflowId: 'workflow-gh-123',
+            name: 'CI',
+            path: '.github/workflows/ci.yml',
+            state: 'active',
+            sourceType: 'local',
+          },
+        ],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+      syncEventRecorder: {
+        record,
+      },
+    });
+
+    await service.syncByRepositoryId('repo_123');
+
+    expect(record).toHaveBeenCalledWith({
+      repositoryId: 'repo_123',
+      type: 'workflow_catalog_sync',
+      status: 'succeeded',
+      details: '1 workflow(s) sincronizado(s).',
+    });
+  });
+
+  it('should record a failed sync event when the catalog sync fails', async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    const service = new WorkflowService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      workflowRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => {
+          throw new Error('GitHub unavailable');
+        },
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+      syncEventRecorder: {
+        record,
+      },
+    });
+
+    await expect(service.syncByRepositoryId('repo_123')).rejects.toThrow(
+      'GitHub unavailable',
+    );
+    expect(record).toHaveBeenCalledWith({
+      repositoryId: 'repo_123',
+      type: 'workflow_catalog_sync',
+      status: 'failed',
+      details: 'Sincronizacao de workflows falhou: Error.',
+    });
+  });
 });

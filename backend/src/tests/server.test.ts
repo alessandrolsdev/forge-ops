@@ -87,6 +87,12 @@ const createRuntimeTestServer = (env: NodeJS.ProcessEnv) =>
       },
       listByRepositoryId: async () => [],
     },
+    syncEventRepository: {
+      create: async () => {
+        throw new Error('Not implemented in runtime bootstrap test.');
+      },
+      listByRepositoryId: async () => [],
+    },
   });
 
 describe('resolveRuntimeServerOptions', () => {

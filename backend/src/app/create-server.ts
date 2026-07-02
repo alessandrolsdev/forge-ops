@@ -32,6 +32,9 @@ import { PrismaPolicyCheckRepository } from '../modules/policy-engine/policy-che
 import type { PolicyCheckRepository } from '../modules/policy-engine/policy-check.repository.js';
 import { PolicyCheckService } from '../modules/policy-engine/policy-check.service.js';
 import { AutomationHealthService } from '../modules/automation-health/automation-health.service.js';
+import { PrismaSyncEventRepository } from '../modules/audit-sync/sync-event.prisma-repository.js';
+import type { SyncEventRepository } from '../modules/audit-sync/sync-event.repository.js';
+import { SyncEventService } from '../modules/audit-sync/sync-event.service.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 const localCorsOrigins = [
@@ -110,6 +113,7 @@ export interface CreateServerOptions {
   pullRequestRepository?: PullRequestRepository;
   codexReviewSummaryRepository?: CodexReviewSummaryRepository;
   policyCheckRepository?: PolicyCheckRepository;
+  syncEventRepository?: SyncEventRepository;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -146,7 +150,8 @@ export const createServer = (options: CreateServerOptions) => {
     options.workflowRunRepository &&
     options.pullRequestRepository &&
     options.codexReviewSummaryRepository &&
-    options.policyCheckRepository
+    options.policyCheckRepository &&
+    options.syncEventRepository
       ? null
       : createPrismaClient();
   const githubBoundary =
@@ -175,6 +180,14 @@ export const createServer = (options: CreateServerOptions) => {
   const policyCheckRepository =
     options.policyCheckRepository ??
     new PrismaPolicyCheckRepository(prismaClient!.policyCheck);
+  const syncEventRepository =
+    options.syncEventRepository ??
+    new PrismaSyncEventRepository(prismaClient!.syncEvent);
+  const syncEventService = new SyncEventService({
+    repositoryRegistryRepository,
+    syncEventRepository,
+    logger: app.log,
+  });
   const healthService = new HealthService({
     githubBoundary,
     repository: healthRepository,
@@ -183,6 +196,7 @@ export const createServer = (options: CreateServerOptions) => {
     repositoryRegistryRepository,
     workflowRepository: workflowCatalogRepository,
     githubBoundary,
+    syncEventRecorder: syncEventService,
     logger: app.log,
   });
   const workflowRunService = new WorkflowRunService({
@@ -190,6 +204,7 @@ export const createServer = (options: CreateServerOptions) => {
     workflowRepository: workflowCatalogRepository,
     workflowRunRepository,
     githubBoundary,
+    syncEventRecorder: syncEventService,
     logger: app.log,
   });
   const pullRequestService = new PullRequestService({
@@ -204,8 +219,10 @@ export const createServer = (options: CreateServerOptions) => {
       pullRequestRepository,
       codexReviewSummaryRepository,
       githubBoundary,
+      syncEventRecorder: syncEventService,
       logger: app.log,
     }),
+    syncEventRecorder: syncEventService,
     logger: app.log,
   });
   const policyCheckService = new PolicyCheckService({
@@ -213,6 +230,7 @@ export const createServer = (options: CreateServerOptions) => {
     workflowRepository: workflowCatalogRepository,
     codexReviewSummaryRepository,
     policyCheckRepository,
+    syncEventRecorder: syncEventService,
     logger: app.log,
   });
   const automationHealthService = new AutomationHealthService({
@@ -229,6 +247,7 @@ export const createServer = (options: CreateServerOptions) => {
     workflowCatalogSync: workflowService,
     workflowRunSync: workflowRunService,
     pullRequestSync: pullRequestService,
+    syncEventRecorder: syncEventService,
     logger: app.log,
   });
 
@@ -247,6 +266,7 @@ export const createServer = (options: CreateServerOptions) => {
     pullRequestService,
     policyCheckService,
     automationHealthService,
+    syncEventService,
   });
 
   return app;

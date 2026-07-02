@@ -3,6 +3,10 @@ import { ApplicationError } from '../../shared/errors/application-error.js';
 import type { GitHubAppBoundary } from '../github/github-app.boundary.js';
 import { RepositoryNotFoundError } from '../repository-registry/repository.errors.js';
 import type { RepositoryRepository } from '../repository-registry/repository.repository.js';
+import {
+  noopSyncEventRecorder,
+  type SyncEventRecorder,
+} from '../audit-sync/sync-event.recorder.js';
 import type { Workflow } from './workflow.entity.js';
 import type { WorkflowRepository } from './workflow.repository.js';
 
@@ -17,6 +21,7 @@ export interface WorkflowServiceOptions {
   repositoryRegistryRepository: RepositoryRepository;
   workflowRepository: WorkflowRepository;
   githubBoundary: GitHubAppBoundary;
+  syncEventRecorder?: SyncEventRecorder;
   logger?: ServiceLogger;
 }
 
@@ -87,6 +92,12 @@ export class WorkflowService {
         },
         'Workflow catalog sync completed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'workflow_catalog_sync',
+        status: 'succeeded',
+        details: `${persistedWorkflows.length} workflow(s) sincronizado(s).`,
+      });
 
       return persistedWorkflows;
     } catch (error) {
@@ -99,6 +110,15 @@ export class WorkflowService {
         },
         'Workflow catalog sync failed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'workflow_catalog_sync',
+        status: 'failed',
+        details:
+          error instanceof Error
+            ? `Sincronizacao de workflows falhou: ${error.name}.`
+            : 'Sincronizacao de workflows falhou.',
+      });
 
       throw error;
     }
@@ -106,6 +126,10 @@ export class WorkflowService {
 
   private get logger(): ServiceLogger {
     return this.options.logger ?? noopLogger;
+  }
+
+  private get syncEventRecorder(): SyncEventRecorder {
+    return this.options.syncEventRecorder ?? noopSyncEventRecorder;
   }
 }
 

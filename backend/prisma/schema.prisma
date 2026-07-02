@@ -20,6 +20,7 @@ model Repository {
   workflows     Workflow[]
   pullRequests  PullRequest[]
   policyChecks  PolicyCheck[]
+  syncEvents    SyncEvent[]
 
   @@index([owner, name])
 }
@@ -130,6 +131,18 @@ model PolicyCheck {
   @@index([repositoryId, checkedAt])
 }
 
+model SyncEvent {
+  id           String          @id @default(cuid())
+  repositoryId String
+  type         SyncEventType
+  status       SyncEventStatus
+  details      String
+  createdAt    DateTime        @default(now())
+  repository   Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId, createdAt])
+}
+
 enum WorkflowState {
   active
   deleted
@@ -187,5 +200,19 @@ enum PolicyKey {
 enum PolicyCheckStatus {
   compliant
   non_compliant
+}
+
+enum SyncEventType {
+  repository_connected
+  workflow_catalog_sync
+  workflow_runs_sync
+  pull_requests_sync
+  codex_review_sync
+  policy_evaluation
+}
+
+enum SyncEventStatus {
+  succeeded
+  failed
 }
 

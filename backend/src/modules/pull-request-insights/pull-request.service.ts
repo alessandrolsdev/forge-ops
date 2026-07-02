@@ -14,6 +14,10 @@ import type {
   WorkflowExecutionConclusion,
   WorkflowExecutionStatus,
 } from '../workflow-runs/workflow-run.entity.js';
+import {
+  noopSyncEventRecorder,
+  type SyncEventRecorder,
+} from '../audit-sync/sync-event.recorder.js';
 
 type ServiceLogger = Pick<Logger, 'info' | 'error'>;
 
@@ -33,6 +37,7 @@ export interface PullRequestServiceOptions {
     CodexReviewSummaryService,
     'syncByPullRequest'
   >;
+  syncEventRecorder?: SyncEventRecorder;
   logger?: ServiceLogger;
 }
 
@@ -386,6 +391,12 @@ export class PullRequestService {
         },
         'Pull request sync completed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'pull_requests_sync',
+        status: 'succeeded',
+        details: `${persistedPullRequests.length} pull request(s) sincronizado(s).`,
+      });
 
       return persistedPullRequests;
     } catch (error) {
@@ -398,6 +409,15 @@ export class PullRequestService {
         },
         'Pull request sync failed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'pull_requests_sync',
+        status: 'failed',
+        details:
+          error instanceof Error
+            ? `Sincronizacao de pull requests falhou: ${error.name}.`
+            : 'Sincronizacao de pull requests falhou.',
+      });
 
       throw error;
     }
@@ -405,6 +425,10 @@ export class PullRequestService {
 
   private get logger(): ServiceLogger {
     return this.options.logger ?? noopLogger;
+  }
+
+  private get syncEventRecorder(): SyncEventRecorder {
+    return this.options.syncEventRecorder ?? noopSyncEventRecorder;
   }
 }
 

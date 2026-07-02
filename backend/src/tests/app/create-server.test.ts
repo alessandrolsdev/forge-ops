@@ -19,6 +19,7 @@ import type {
 import type { PullRequest } from '../../modules/pull-request-insights/pull-request.entity.js';
 import type { CodexReviewSummary } from '../../modules/pull-request-insights/codex-review-summary.entity.js';
 import type { PolicyCheck } from '../../modules/policy-engine/policy-check.entity.js';
+import type { SyncEvent } from '../../modules/audit-sync/sync-event.entity.js';
 
 const buildRepository = (
   overrides: Partial<Repository> = {},
@@ -195,6 +196,7 @@ const createProtectedServer = (overrides?: {
     ...(overrides?.codexReviewSummaries ?? []),
   ];
   const policyCheckStore: PolicyCheck[] = [];
+  const syncEventStore: SyncEvent[] = [];
 
   return createServer({
     env: {
@@ -575,6 +577,27 @@ const createProtectedServer = (overrides?: {
         policyCheckStore
           .filter((check) => check.repositoryId === repositoryId)
           .sort((left, right) => left.policyKey.localeCompare(right.policyKey)),
+    },
+    syncEventRepository: {
+      create: async (input) => {
+        const syncEvent: SyncEvent = {
+          id: `sync_${syncEventStore.length + 1}`,
+          repositoryId: input.repositoryId,
+          type: input.type,
+          status: input.status,
+          details: input.details,
+          createdAt: new Date('2026-04-01T12:00:00.000Z'),
+        };
+
+        syncEventStore.push(syncEvent);
+
+        return syncEvent;
+      },
+      listByRepositoryId: async (repositoryId, limit) =>
+        syncEventStore
+          .filter((syncEvent) => syncEvent.repositoryId === repositoryId)
+          .slice(-limit)
+          .reverse(),
     },
   });
 };
@@ -2670,6 +2693,69 @@ describe('createServer', () => {
     });
 
     expect(response.statusCode).toBe(401);
+
+    await server.close();
+  });
+
+  it('should expose the sync event audit trail after connecting a repository', async () => {
+    const server = createProtectedServer({
+      installationRepositories: [buildInstallationRepository()],
+    });
+
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+      payload: buildCreateRepositoryInput(),
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+
+    const repositoryId = createResponse.json().repository.id as string;
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/v1/repositories/${repositoryId}/sync-events`,
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    const { syncEvents } = response.json() as {
+      syncEvents: Array<{ type: string; status: string; createdAt: string }>;
+    };
+
+    const eventTypes = syncEvents.map((syncEvent) => syncEvent.type);
+
+    expect(eventTypes).toContain('repository_connected');
+    expect(eventTypes).toContain('workflow_catalog_sync');
+    expect(eventTypes).toContain('workflow_runs_sync');
+    expect(eventTypes).toContain('pull_requests_sync');
+    expect(syncEvents.every((syncEvent) => syncEvent.status === 'succeeded')).toBe(
+      true,
+    );
+
+    await server.close();
+  });
+
+  it('should return 404 for sync events of an unknown repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_missing/sync-events',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
 
     await server.close();
   });

@@ -11,6 +11,7 @@ export const createIntegrationPrismaClient = (): PrismaClient => {
 };
 
 export const resetDatabase = async (prisma: PrismaClient): Promise<void> => {
+  await prisma.syncEvent.deleteMany();
   await prisma.policyCheck.deleteMany();
   await prisma.codexReviewSummary.deleteMany();
   await prisma.pullRequest.deleteMany();

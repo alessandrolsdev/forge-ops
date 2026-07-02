@@ -5,6 +5,10 @@ import { RepositoryNotFoundError } from '../repository-registry/repository.error
 import type { RepositoryRepository } from '../repository-registry/repository.repository.js';
 import { WorkflowNotFoundError } from '../workflow-catalog/workflow.errors.js';
 import type { WorkflowRepository } from '../workflow-catalog/workflow.repository.js';
+import {
+  noopSyncEventRecorder,
+  type SyncEventRecorder,
+} from '../audit-sync/sync-event.recorder.js';
 import type { WorkflowJob, WorkflowRun } from './workflow-run.entity.js';
 import { WorkflowRunNotFoundError } from './workflow-run.errors.js';
 import type { WorkflowRunRepository } from './workflow-run.repository.js';
@@ -21,6 +25,7 @@ export interface WorkflowRunServiceOptions {
   workflowRepository: WorkflowRepository;
   workflowRunRepository: WorkflowRunRepository;
   githubBoundary: GitHubAppBoundary;
+  syncEventRecorder?: SyncEventRecorder;
   logger?: ServiceLogger;
 }
 
@@ -172,6 +177,12 @@ export class WorkflowRunService {
         },
         'Workflow runs sync completed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'workflow_runs_sync',
+        status: 'succeeded',
+        details: `${syncedRuns.length} run(s) e ${syncedJobCount} job(s) sincronizado(s).`,
+      });
 
       return syncedRuns;
     } catch (error) {
@@ -184,6 +195,15 @@ export class WorkflowRunService {
         },
         'Workflow runs sync failed.',
       );
+      await this.syncEventRecorder.record({
+        repositoryId: repository.id,
+        type: 'workflow_runs_sync',
+        status: 'failed',
+        details:
+          error instanceof Error
+            ? `Sincronizacao de runs falhou: ${error.name}.`
+            : 'Sincronizacao de runs falhou.',
+      });
 
       throw error;
     }
@@ -191,6 +211,10 @@ export class WorkflowRunService {
 
   private get logger(): ServiceLogger {
     return this.options.logger ?? noopLogger;
+  }
+
+  private get syncEventRecorder(): SyncEventRecorder {
+    return this.options.syncEventRecorder ?? noopSyncEventRecorder;
   }
 }
 
