@@ -21,6 +21,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: forgeops
+          POSTGRES_PASSWORD: forgeops
+          POSTGRES_DB: forgeops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forgeops"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -48,3 +63,13 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      - name: Apply database migrations
+        run: pnpm --prefix backend run prisma:migrate:deploy
+        env:
+          DATABASE_URL: postgresql://forgeops:forgeops@localhost:5432/forgeops_test
+
+      - name: Run integration tests
+        run: pnpm --prefix backend run test:integration
+        env:
+          DATABASE_URL: postgresql://forgeops:forgeops@localhost:5432/forgeops_test

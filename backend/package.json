@@ -10,8 +10,10 @@
     "lint": "node ../scripts/run-bin.mjs eslint .",
     "typecheck": "node ../scripts/run-bin.mjs tsc --project tsconfig.json --noEmit",
     "test": "node ../scripts/run-bin.mjs vitest run",
+    "test:integration": "node ../scripts/run-bin.mjs vitest run --config vitest.integration.config.ts",
     "prisma:generate": "node ../scripts/run-bin.mjs prisma generate",
-    "prisma:validate": "node ../scripts/run-bin.mjs prisma validate"
+    "prisma:validate": "node ../scripts/run-bin.mjs prisma validate",
+    "prisma:migrate:deploy": "node ../scripts/run-bin.mjs prisma migrate deploy"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
