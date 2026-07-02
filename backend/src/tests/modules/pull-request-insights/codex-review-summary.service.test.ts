@@ -85,6 +85,7 @@ describe('CodexReviewSummaryService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         findByPullRequestId,
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -130,6 +131,7 @@ describe('CodexReviewSummaryService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -202,6 +204,7 @@ describe('CodexReviewSummaryService', () => {
         create: vi.fn(),
         upsert,
         findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -281,6 +284,7 @@ describe('CodexReviewSummaryService', () => {
         create: vi.fn(),
         upsert,
         findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -342,6 +346,7 @@ describe('CodexReviewSummaryService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -390,6 +395,7 @@ describe('CodexReviewSummaryService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',

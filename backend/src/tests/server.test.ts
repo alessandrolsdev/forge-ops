@@ -78,6 +78,13 @@ const createRuntimeTestServer = (env: NodeJS.ProcessEnv) =>
         throw new Error('Not implemented in runtime bootstrap test.');
       },
       findByPullRequestId: async () => null,
+      listByRepositoryId: async () => [],
+    },
+    policyCheckRepository: {
+      upsert: async () => {
+        throw new Error('Not implemented in runtime bootstrap test.');
+      },
+      listByRepositoryId: async () => [],
     },
   });
 

@@ -619,6 +619,7 @@ describe('PullRequestService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         findByPullRequestId: vi.fn().mockResolvedValue(buildCodexReviewSummary()),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -704,6 +705,7 @@ describe('PullRequestService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         findByPullRequestId: vi.fn().mockResolvedValue(null),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',
@@ -777,6 +779,7 @@ describe('PullRequestService', () => {
         create: vi.fn(),
         upsert: vi.fn(),
         findByPullRequestId: vi.fn().mockResolvedValue(buildCodexReviewSummary()),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
       },
       githubBoundary: {
         mode: 'github-app',

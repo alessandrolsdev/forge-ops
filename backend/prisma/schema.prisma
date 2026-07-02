@@ -19,6 +19,7 @@ model Repository {
   updatedAt     DateTime @updatedAt
   workflows     Workflow[]
   pullRequests  PullRequest[]
+  policyChecks  PolicyCheck[]
 
   @@index([owner, name])
 }
@@ -114,6 +115,21 @@ model CodexReviewSummary {
   @@index([pullRequestId, createdAt])
 }
 
+model PolicyCheck {
+  id           String            @id @default(cuid())
+  repositoryId String
+  policyKey    PolicyKey
+  status       PolicyCheckStatus
+  details      String
+  checkedAt    DateTime
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  repository   Repository        @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, policyKey])
+  @@index([repositoryId, checkedAt])
+}
+
 enum WorkflowState {
   active
   deleted
@@ -157,5 +173,19 @@ enum PullRequestState {
 enum CodexReviewSummarySource {
   github_review
   workflow_comment
+}
+
+enum PolicyKey {
+  ci_workflow_present
+  lint_workflow_present
+  test_workflow_present
+  automated_review_present
+  reusable_workflow_present
+  security_workflow_present
+}
+
+enum PolicyCheckStatus {
+  compliant
+  non_compliant
 }
 

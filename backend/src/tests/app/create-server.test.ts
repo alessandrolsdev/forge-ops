@@ -18,6 +18,7 @@ import type {
 } from '../../modules/workflow-runs/workflow-run.entity.js';
 import type { PullRequest } from '../../modules/pull-request-insights/pull-request.entity.js';
 import type { CodexReviewSummary } from '../../modules/pull-request-insights/codex-review-summary.entity.js';
+import type { PolicyCheck } from '../../modules/policy-engine/policy-check.entity.js';
 
 const buildRepository = (
   overrides: Partial<Repository> = {},
@@ -193,6 +194,7 @@ const createProtectedServer = (overrides?: {
   const codexReviewSummaryStore: CodexReviewSummary[] = [
     ...(overrides?.codexReviewSummaries ?? []),
   ];
+  const policyCheckStore: PolicyCheck[] = [];
 
   return createServer({
     env: {
@@ -509,6 +511,49 @@ const createProtectedServer = (overrides?: {
         codexReviewSummaryStore.find(
           (summary) => summary.pullRequestId === pullRequestId,
         ) ?? null,
+      listByRepositoryId: async (repositoryId) =>
+        codexReviewSummaryStore.filter((summary) =>
+          pullRequestStore.some(
+            (pullRequest) =>
+              pullRequest.id === summary.pullRequestId &&
+              pullRequest.repositoryId === repositoryId,
+          ),
+        ),
+    },
+    policyCheckRepository: {
+      upsert: async (input) => {
+        const existingCheckIndex = policyCheckStore.findIndex(
+          (check) =>
+            check.repositoryId === input.repositoryId &&
+            check.policyKey === input.policyKey,
+        );
+        const now = new Date('2026-04-01T12:00:00.000Z');
+        const policyCheck: PolicyCheck = {
+          id:
+            existingCheckIndex >= 0
+              ? policyCheckStore[existingCheckIndex]!.id
+              : `policy_${policyCheckStore.length + 1}`,
+          repositoryId: input.repositoryId,
+          policyKey: input.policyKey,
+          status: input.status,
+          details: input.details,
+          checkedAt: input.checkedAt,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        if (existingCheckIndex >= 0) {
+          policyCheckStore[existingCheckIndex] = policyCheck;
+        } else {
+          policyCheckStore.push(policyCheck);
+        }
+
+        return policyCheck;
+      },
+      listByRepositoryId: async (repositoryId) =>
+        policyCheckStore
+          .filter((check) => check.repositoryId === repositoryId)
+          .sort((left, right) => left.policyKey.localeCompare(right.policyKey)),
     },
   });
 };
@@ -2277,6 +2322,135 @@ describe('createServer', () => {
       },
       jobs: [],
     });
+
+    await server.close();
+  });
+
+  it('should return an empty policy check list before the first evaluation', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/policy-checks',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ policyChecks: [] });
+
+    await server.close();
+  });
+
+  it('should evaluate policy checks and persist the results', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [
+        buildWorkflow({
+          name: 'Lint',
+          path: '.github/workflows/lint.yml',
+        }),
+      ],
+    });
+
+    const evaluateResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories/repo_123/policy-checks/evaluate',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(evaluateResponse.statusCode).toBe(200);
+
+    const evaluatedChecks = evaluateResponse.json().policyChecks as Array<{
+      policyKey: string;
+      status: string;
+      checkedAt: string;
+    }>;
+
+    expect(evaluatedChecks).toHaveLength(6);
+    expect(
+      evaluatedChecks.find((check) => check.policyKey === 'lint_workflow_present')
+        ?.status,
+    ).toBe('compliant');
+    expect(
+      evaluatedChecks.find(
+        (check) => check.policyKey === 'security_workflow_present',
+      )?.status,
+    ).toBe('non_compliant');
+
+    const listResponse = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/policy-checks',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().policyChecks).toHaveLength(6);
+
+    await server.close();
+  });
+
+  it('should reject policy evaluation without the write capability', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      capabilities: ['repositories:read'],
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories/repo_123/policy-checks/evaluate',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+
+    await server.close();
+  });
+
+  it('should return 404 when evaluating policies for an unknown repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/repositories/repo_missing/policy-checks/evaluate',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'repository_not_found',
+        message: 'Repository was not found.',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should require authentication for policy check routes', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/policy-checks',
+    });
+
+    expect(response.statusCode).toBe(401);
 
     await server.close();
   });

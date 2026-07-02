@@ -7,4 +7,5 @@ export interface CodexReviewSummaryRepository {
   create(input: UpsertCodexReviewSummaryInput): Promise<CodexReviewSummary>;
   upsert(input: UpsertCodexReviewSummaryInput): Promise<CodexReviewSummary>;
   findByPullRequestId(pullRequestId: string): Promise<CodexReviewSummary | null>;
+  listByRepositoryId(repositoryId: string): Promise<CodexReviewSummary[]>;
 }

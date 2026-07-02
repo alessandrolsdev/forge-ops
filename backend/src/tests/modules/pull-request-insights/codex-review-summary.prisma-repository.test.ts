@@ -44,6 +44,7 @@ describe('PrismaCodexReviewSummaryRepository', () => {
       create,
       upsert,
       findUnique,
+      findMany: vi.fn(),
     });
 
     await expect(
@@ -79,6 +80,7 @@ describe('PrismaCodexReviewSummaryRepository', () => {
       create,
       upsert,
       findUnique,
+      findMany: vi.fn(),
     });
 
     await expect(repository.findByPullRequestId('pr_123')).resolves.toEqual(
@@ -100,6 +102,7 @@ describe('PrismaCodexReviewSummaryRepository', () => {
       create,
       upsert,
       findUnique,
+      findMany: vi.fn(),
     });
 
     await expect(
@@ -130,6 +133,7 @@ describe('PrismaCodexReviewSummaryRepository', () => {
       create,
       upsert,
       findUnique,
+      findMany: vi.fn(),
     });
 
     await expect(

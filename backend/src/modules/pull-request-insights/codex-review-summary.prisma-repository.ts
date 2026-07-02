@@ -58,6 +58,16 @@ type CodexReviewSummaryDelegate = {
       pullRequestId: string;
     };
   }): Promise<CodexReviewSummaryRecord | null>;
+  findMany(args: {
+    where: {
+      pullRequest: {
+        repositoryId: string;
+      };
+    };
+    orderBy: Array<{
+      updatedAt?: 'asc' | 'desc';
+    }>;
+  }): Promise<CodexReviewSummaryRecord[]>;
 };
 
 const isUniqueConstraintError = (error: unknown): boolean => {
@@ -158,5 +168,20 @@ export class PrismaCodexReviewSummaryRepository
     });
 
     return record ? toCodexReviewSummary(record) : null;
+  }
+
+  async listByRepositoryId(
+    repositoryId: string,
+  ): Promise<CodexReviewSummary[]> {
+    const records = await this.codexReviewSummary.findMany({
+      where: {
+        pullRequest: {
+          repositoryId,
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+
+    return records.map(toCodexReviewSummary);
   }
 }

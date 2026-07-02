@@ -28,6 +28,9 @@ import { PullRequestService } from '../modules/pull-request-insights/pull-reques
 import { PrismaCodexReviewSummaryRepository } from '../modules/pull-request-insights/codex-review-summary.prisma-repository.js';
 import { CodexReviewSummaryService } from '../modules/pull-request-insights/codex-review-summary.service.js';
 import type { CodexReviewSummaryRepository } from '../modules/pull-request-insights/codex-review-summary.repository.js';
+import { PrismaPolicyCheckRepository } from '../modules/policy-engine/policy-check.prisma-repository.js';
+import type { PolicyCheckRepository } from '../modules/policy-engine/policy-check.repository.js';
+import { PolicyCheckService } from '../modules/policy-engine/policy-check.service.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 const localCorsOrigins = [
@@ -105,6 +108,7 @@ export interface CreateServerOptions {
   workflowRunRepository?: WorkflowRunRepository;
   pullRequestRepository?: PullRequestRepository;
   codexReviewSummaryRepository?: CodexReviewSummaryRepository;
+  policyCheckRepository?: PolicyCheckRepository;
 }
 
 export const createServer = (options: CreateServerOptions) => {
@@ -140,7 +144,8 @@ export const createServer = (options: CreateServerOptions) => {
     options.workflowCatalogRepository &&
     options.workflowRunRepository &&
     options.pullRequestRepository &&
-    options.codexReviewSummaryRepository
+    options.codexReviewSummaryRepository &&
+    options.policyCheckRepository
       ? null
       : createPrismaClient();
   const githubBoundary =
@@ -166,6 +171,9 @@ export const createServer = (options: CreateServerOptions) => {
   const codexReviewSummaryRepository =
     options.codexReviewSummaryRepository ??
     new PrismaCodexReviewSummaryRepository(prismaClient!.codexReviewSummary);
+  const policyCheckRepository =
+    options.policyCheckRepository ??
+    new PrismaPolicyCheckRepository(prismaClient!.policyCheck);
   const healthService = new HealthService({
     githubBoundary,
     repository: healthRepository,
@@ -199,6 +207,13 @@ export const createServer = (options: CreateServerOptions) => {
     }),
     logger: app.log,
   });
+  const policyCheckService = new PolicyCheckService({
+    repositoryRegistryRepository,
+    workflowRepository: workflowCatalogRepository,
+    codexReviewSummaryRepository,
+    policyCheckRepository,
+    logger: app.log,
+  });
   const repositoryService = new RepositoryService({
     repository: repositoryRegistryRepository,
     githubBoundary,
@@ -221,6 +236,7 @@ export const createServer = (options: CreateServerOptions) => {
     workflowService,
     workflowRunService,
     pullRequestService,
+    policyCheckService,
   });
 
   return app;
