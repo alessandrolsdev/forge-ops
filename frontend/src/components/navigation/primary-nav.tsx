@@ -6,8 +6,8 @@ import { usePathname } from 'next/navigation';
 const navigationItems = [
   {
     href: '/',
-    label: 'Overview',
-    description: 'Foundation status and architecture overview.',
+    label: 'Health',
+    description: 'Automation health score per monitored repository.',
   },
   {
     href: '/repositories',

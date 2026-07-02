@@ -22,7 +22,7 @@ describe('AppShell', () => {
         name: 'Engineering automation, governed.',
       }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /overview/i })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: /health/i })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: /repositories/i })).toHaveAttribute(
       'href',
       '/repositories',

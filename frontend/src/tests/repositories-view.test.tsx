@@ -40,6 +40,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -185,6 +191,12 @@ describe('RepositoriesView', () => {
       }),
       requestPullRequestCodexReview: vi.fn(),
       createRepository,
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -261,6 +273,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -305,6 +323,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -343,6 +367,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -385,6 +415,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -469,6 +505,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -555,6 +597,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview,
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -621,6 +669,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -688,6 +742,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -750,6 +810,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -808,6 +874,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -858,6 +930,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -912,6 +990,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1011,6 +1095,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail,
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1092,6 +1182,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn().mockImplementation(() => new Promise(() => undefined)),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1181,6 +1277,12 @@ describe('RepositoriesView', () => {
       }),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1256,6 +1358,12 @@ describe('RepositoriesView', () => {
         .mockRejectedValue(new ApiClientError('Workflow run detail is unavailable.', 503)),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1343,6 +1451,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository,
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1390,6 +1504,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1447,6 +1567,12 @@ describe('RepositoriesView', () => {
         .mockRejectedValue(
           new ApiClientError('Repository is already monitored.', 409, 'repository_already_exists'),
         ),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);
@@ -1497,6 +1623,12 @@ describe('RepositoriesView', () => {
       getWorkflowRunDetail: vi.fn(),
       requestPullRequestCodexReview: vi.fn(),
       createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi.fn(),
+      getRepositorySyncEvents: vi.fn(),
     };
 
     renderRepositoriesView(client);

@@ -1,5 +1,5 @@
-import { HomeView } from '@/features/home/home-view';
+import { AutomationHealthView } from '@/features/automation-health/automation-health-view';
 
 export default function HomePage() {
-  return <HomeView />;
+  return <AutomationHealthView />;
 }

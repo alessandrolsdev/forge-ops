@@ -213,6 +213,98 @@ const workflowRunDetailResponseSchema = z.object({
   jobs: z.array(workflowRunJobItemSchema),
 });
 
+const policyKeySchema = z.enum([
+  'ci_workflow_present',
+  'lint_workflow_present',
+  'test_workflow_present',
+  'automated_review_present',
+  'reusable_workflow_present',
+  'security_workflow_present',
+]);
+
+const policyCheckStatusSchema = z.enum(['compliant', 'non_compliant']);
+
+const automationHealthSignalSchema = z.object({
+  policyKey: policyKeySchema,
+  status: policyCheckStatusSchema,
+  weight: z.number().int().nonnegative(),
+  earnedPoints: z.number().int().nonnegative(),
+  details: z.string().min(1),
+});
+
+const automationHealthScoreSchema = z.object({
+  repositoryId: z.string().min(1),
+  fullName: z.string().min(1),
+  score: z.number().int().min(0).max(100),
+  grade: z.enum(['healthy', 'attention', 'critical']),
+  signals: z.array(automationHealthSignalSchema),
+  ciReliability: z.object({
+    weight: z.number().int().nonnegative(),
+    earnedPoints: z.number().int().nonnegative(),
+    consideredRunCount: z.number().int().nonnegative(),
+    successfulRunCount: z.number().int().nonnegative(),
+  }),
+  blockersPenalty: z.object({
+    openBlockersCount: z.number().int().nonnegative(),
+    penaltyPoints: z.number().int().nonnegative(),
+  }),
+  computedAt: z.string().datetime(),
+});
+
+const automationHealthOverviewResponseSchema = z.object({
+  repositories: z.array(automationHealthScoreSchema),
+});
+
+const repositoryAutomationHealthResponseSchema = z.object({
+  health: automationHealthScoreSchema,
+});
+
+const policyCheckItemSchema = z.object({
+  id: z.string().min(1),
+  repositoryId: z.string().min(1),
+  policyKey: policyKeySchema,
+  status: policyCheckStatusSchema,
+  details: z.string().min(1),
+  checkedAt: z.string().datetime(),
+});
+
+const policyChecksResponseSchema = z.object({
+  policyChecks: z.array(policyCheckItemSchema),
+});
+
+const reviewInsightsResponseSchema = z.object({
+  insights: z.object({
+    repositoryId: z.string().min(1),
+    openPullRequestCount: z.number().int().nonnegative(),
+    reviewedPullRequestCount: z.number().int().nonnegative(),
+    openBlockersCount: z.number().int().nonnegative(),
+    totalBlockersCount: z.number().int().nonnegative(),
+    totalRisksCount: z.number().int().nonnegative(),
+    totalSuggestionsCount: z.number().int().nonnegative(),
+    lastReviewedAt: z.string().datetime().nullable(),
+  }),
+});
+
+const syncEventItemSchema = z.object({
+  id: z.string().min(1),
+  repositoryId: z.string().min(1),
+  type: z.enum([
+    'repository_connected',
+    'workflow_catalog_sync',
+    'workflow_runs_sync',
+    'pull_requests_sync',
+    'codex_review_sync',
+    'policy_evaluation',
+  ]),
+  status: z.enum(['succeeded', 'failed']),
+  details: z.string().min(1),
+  createdAt: z.string().datetime(),
+});
+
+const syncEventsResponseSchema = z.object({
+  syncEvents: z.array(syncEventItemSchema),
+});
+
 export type MonitoredRepository = z.infer<typeof monitoredRepositorySchema>;
 export type RepositoryDiscoveryItem = z.infer<typeof repositoryDiscoveryItemSchema>;
 export type CreateRepositoryInput = z.infer<typeof createRepositoryInputSchema>;
@@ -225,6 +317,11 @@ export type PullRequestCodexReviewRequestResponse = z.infer<
 export type WorkflowRunItem = z.infer<typeof workflowRunItemSchema>;
 export type WorkflowRunJobItem = z.infer<typeof workflowRunJobItemSchema>;
 export type WorkflowRunDetailResponse = z.infer<typeof workflowRunDetailResponseSchema>;
+export type AutomationHealthScore = z.infer<typeof automationHealthScoreSchema>;
+export type AutomationHealthSignal = z.infer<typeof automationHealthSignalSchema>;
+export type PolicyCheckItem = z.infer<typeof policyCheckItemSchema>;
+export type ReviewInsights = z.infer<typeof reviewInsightsResponseSchema>['insights'];
+export type SyncEventItem = z.infer<typeof syncEventItemSchema>;
 
 interface CreateApiClientOptions {
   baseUrl?: string;
@@ -278,6 +375,27 @@ export interface ForgeOpsApiClient {
     accessToken: string,
     input: CreateRepositoryInput,
   ): Promise<MonitoredRepository>;
+  getAutomationHealthOverview(accessToken: string): Promise<AutomationHealthScore[]>;
+  getRepositoryAutomationHealth(
+    accessToken: string,
+    repositoryId: string,
+  ): Promise<AutomationHealthScore>;
+  getRepositoryPolicyChecks(
+    accessToken: string,
+    repositoryId: string,
+  ): Promise<PolicyCheckItem[]>;
+  evaluateRepositoryPolicyChecks(
+    accessToken: string,
+    repositoryId: string,
+  ): Promise<PolicyCheckItem[]>;
+  getRepositoryReviewInsights(
+    accessToken: string,
+    repositoryId: string,
+  ): Promise<ReviewInsights>;
+  getRepositorySyncEvents(
+    accessToken: string,
+    repositoryId: string,
+  ): Promise<SyncEventItem[]>;
 }
 
 const createApiError = async (response: Response, fallbackMessage: string) => {
@@ -482,6 +600,129 @@ export const createApiClient = (options: CreateApiClientOptions = {}): ForgeOpsA
       }
 
       return createRepositoryResponseSchema.parse(await response.json()).repository;
+    },
+
+    async getAutomationHealthOverview(
+      accessToken: string,
+    ): Promise<AutomationHealthScore[]> {
+      const response = await fetcher(`${baseUrl}/api/v1/automation-health`, {
+        headers: buildHeaders(accessToken),
+      });
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch automation health overview (${response.status})`,
+        );
+      }
+
+      return automationHealthOverviewResponseSchema.parse(await response.json()).repositories;
+    },
+
+    async getRepositoryAutomationHealth(
+      accessToken: string,
+      repositoryId: string,
+    ): Promise<AutomationHealthScore> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/automation-health`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch repository automation health (${response.status})`,
+        );
+      }
+
+      return repositoryAutomationHealthResponseSchema.parse(await response.json()).health;
+    },
+
+    async getRepositoryPolicyChecks(
+      accessToken: string,
+      repositoryId: string,
+    ): Promise<PolicyCheckItem[]> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/policy-checks`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch policy checks (${response.status})`,
+        );
+      }
+
+      return policyChecksResponseSchema.parse(await response.json()).policyChecks;
+    },
+
+    async evaluateRepositoryPolicyChecks(
+      accessToken: string,
+      repositoryId: string,
+    ): Promise<PolicyCheckItem[]> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/policy-checks/evaluate`,
+        {
+          method: 'POST',
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to evaluate policy checks (${response.status})`,
+        );
+      }
+
+      return policyChecksResponseSchema.parse(await response.json()).policyChecks;
+    },
+
+    async getRepositoryReviewInsights(
+      accessToken: string,
+      repositoryId: string,
+    ): Promise<ReviewInsights> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/review-insights`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch review insights (${response.status})`,
+        );
+      }
+
+      return reviewInsightsResponseSchema.parse(await response.json()).insights;
+    },
+
+    async getRepositorySyncEvents(
+      accessToken: string,
+      repositoryId: string,
+    ): Promise<SyncEventItem[]> {
+      const response = await fetcher(
+        `${baseUrl}/api/v1/repositories/${repositoryId}/sync-events`,
+        {
+          headers: buildHeaders(accessToken),
+        },
+      );
+
+      if (!response.ok) {
+        throw await createApiError(
+          response,
+          `Failed to fetch sync events (${response.status})`,
+        );
+      }
+
+      return syncEventsResponseSchema.parse(await response.json()).syncEvents;
     },
   };
 };

@@ -531,3 +531,199 @@ pre {
     align-items: flex-start;
   }
 }
+
+.health-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+
+.health-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-strong);
+}
+
+.health-card--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.health-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.health-card__name {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.health-badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.health-badge--healthy {
+  background: rgba(22, 163, 74, 0.14);
+  color: #166534;
+}
+
+.health-badge--attention {
+  background: rgba(217, 119, 6, 0.16);
+  color: #92400e;
+}
+
+.health-badge--critical {
+  background: rgba(220, 38, 38, 0.14);
+  color: #991b1b;
+}
+
+.health-card__score {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.health-card__score-value {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.health-card__score-max {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.health-card__signals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.health-signal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.health-signal__marker {
+  width: 18px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.health-signal--compliant .health-signal__marker {
+  color: #166534;
+}
+
+.health-signal--non-compliant .health-signal__marker {
+  color: #991b1b;
+}
+
+.health-signal__label {
+  flex: 1;
+  text-transform: capitalize;
+}
+
+.health-signal__points {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-card__reliability,
+.health-card__penalty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.health-card__penalty {
+  color: #991b1b;
+}
+
+.policy-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.policy-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.policy-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.policy-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.policy-list__status {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.policy-list__status--compliant {
+  background: rgba(22, 163, 74, 0.14);
+  color: #166534;
+}
+
+.policy-list__status--non-compliant {
+  background: rgba(220, 38, 38, 0.14);
+  color: #991b1b;
+}
+
+.policy-list__body {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.policy-list__body strong {
+  text-transform: capitalize;
+}
+
+.policy-list__timestamp {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .health-dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-list__item {
+    flex-direction: column;
+  }
+}
