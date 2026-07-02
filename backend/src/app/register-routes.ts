@@ -18,6 +18,8 @@ import { registerPullRequestRoutes } from '../modules/pull-request-insights/pull
 import type { PullRequestService } from '../modules/pull-request-insights/pull-request.service.js';
 import { registerPolicyEngineRoutes } from '../modules/policy-engine/policy-check.controller.js';
 import type { PolicyCheckService } from '../modules/policy-engine/policy-check.service.js';
+import { registerAutomationHealthRoutes } from '../modules/automation-health/automation-health.controller.js';
+import type { AutomationHealthService } from '../modules/automation-health/automation-health.service.js';
 
 interface RegisterRoutesOptions {
   healthService: HealthService;
@@ -26,6 +28,7 @@ interface RegisterRoutesOptions {
   workflowRunService: WorkflowRunService;
   pullRequestService: PullRequestService;
   policyCheckService: PolicyCheckService;
+  automationHealthService: AutomationHealthService;
 }
 
 export type ForgeOpsFastifyInstance = FastifyInstance<
@@ -46,4 +49,5 @@ export const registerRoutes = (
   registerWorkflowRunRoutes(app, options.workflowRunService);
   registerPullRequestRoutes(app, options.pullRequestService);
   registerPolicyEngineRoutes(app, options.policyCheckService);
+  registerAutomationHealthRoutes(app, options.automationHealthService);
 };

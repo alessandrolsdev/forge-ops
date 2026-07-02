@@ -213,6 +213,42 @@ describe('PrismaWorkflowRunRepository', () => {
     });
   });
 
+  it('should list recent completed runs by repository with a sample limit', async () => {
+    const workflowRunCreate = vi.fn();
+    const workflowRunUpsert = vi.fn();
+    const workflowRunFindMany = vi.fn().mockResolvedValue([buildRunRecord()]);
+    const repository = new PrismaWorkflowRunRepository({
+      workflowRun: {
+        create: workflowRunCreate,
+        upsert: workflowRunUpsert,
+        findMany: workflowRunFindMany,
+      },
+      workflowJob: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        findMany: vi.fn(),
+      },
+    });
+
+    await expect(
+      repository.listRecentCompletedRunsByRepositoryId('repo_123', 20),
+    ).resolves.toEqual([buildRunRecord()]);
+
+    expect(workflowRunFindMany).toHaveBeenCalledWith({
+      where: {
+        workflow: {
+          repositoryId: 'repo_123',
+        },
+        status: 'completed',
+        conclusion: {
+          not: null,
+        },
+      },
+      orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 20,
+    });
+  });
+
   it('should find a workflow run by id', async () => {
     const workflowRunCreate = vi.fn();
     const workflowRunUpsert = vi.fn();

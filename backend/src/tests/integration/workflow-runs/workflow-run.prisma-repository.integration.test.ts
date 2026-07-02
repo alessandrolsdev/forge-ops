@@ -127,6 +127,57 @@ describe('PrismaWorkflowRunRepository (integration)', () => {
     expect(runs).toHaveLength(1);
   });
 
+  it('lists recent completed runs by repository with limit and ordering', async () => {
+    const repository = await createRepository();
+    const workflow = await createWorkflow(repository.id);
+    const repositoryUnderTest = new PrismaWorkflowRunRepository({
+      workflowRun: prisma.workflowRun,
+      workflowJob: prisma.workflowJob,
+    });
+
+    await repositoryUnderTest.createRun(
+      buildRunInput(workflow.id, {
+        githubRunId: 'old-success',
+        startedAt: new Date('2026-06-01T10:00:00.000Z'),
+      }),
+    );
+    await repositoryUnderTest.createRun(
+      buildRunInput(workflow.id, {
+        githubRunId: 'new-failure',
+        conclusion: 'failure',
+        startedAt: new Date('2026-06-02T10:00:00.000Z'),
+      }),
+    );
+    await repositoryUnderTest.createRun(
+      buildRunInput(workflow.id, {
+        githubRunId: 'in-progress',
+        status: 'in_progress',
+        conclusion: null,
+        startedAt: new Date('2026-06-03T10:00:00.000Z'),
+      }),
+    );
+
+    const recentRuns =
+      await repositoryUnderTest.listRecentCompletedRunsByRepositoryId(
+        repository.id,
+        1,
+      );
+
+    expect(recentRuns).toHaveLength(1);
+    expect(recentRuns[0]?.githubRunId).toBe('new-failure');
+
+    const allCompleted =
+      await repositoryUnderTest.listRecentCompletedRunsByRepositoryId(
+        repository.id,
+        20,
+      );
+
+    expect(allCompleted.map((run) => run.githubRunId)).toEqual([
+      'new-failure',
+      'old-success',
+    ]);
+  });
+
   it('upserts jobs idempotently for a run', async () => {
     const repository = await createRepository();
     const workflow = await createWorkflow(repository.id);

@@ -31,6 +31,7 @@ import type { CodexReviewSummaryRepository } from '../modules/pull-request-insig
 import { PrismaPolicyCheckRepository } from '../modules/policy-engine/policy-check.prisma-repository.js';
 import type { PolicyCheckRepository } from '../modules/policy-engine/policy-check.repository.js';
 import { PolicyCheckService } from '../modules/policy-engine/policy-check.service.js';
+import { AutomationHealthService } from '../modules/automation-health/automation-health.service.js';
 import type { OperatorAuthVerifier } from '../shared/auth/operator-auth-verifier.js';
 
 const localCorsOrigins = [
@@ -214,6 +215,14 @@ export const createServer = (options: CreateServerOptions) => {
     policyCheckRepository,
     logger: app.log,
   });
+  const automationHealthService = new AutomationHealthService({
+    repositoryRegistryRepository,
+    workflowRepository: workflowCatalogRepository,
+    workflowRunRepository,
+    pullRequestRepository,
+    codexReviewSummaryRepository,
+    logger: app.log,
+  });
   const repositoryService = new RepositoryService({
     repository: repositoryRegistryRepository,
     githubBoundary,
@@ -237,6 +246,7 @@ export const createServer = (options: CreateServerOptions) => {
     workflowRunService,
     pullRequestService,
     policyCheckService,
+    automationHealthService,
   });
 
   return app;

@@ -88,12 +88,20 @@ type WorkflowRunDelegate = {
   }): Promise<WorkflowRunRecord>;
   findMany(args: {
     where: {
-      workflowId: string;
+      workflowId?: string;
+      workflow?: {
+        repositoryId: string;
+      };
+      status?: WorkflowExecutionStatus;
+      conclusion?: {
+        not: null;
+      };
     };
     orderBy: Array<{
       startedAt?: 'asc' | 'desc';
       createdAt?: 'asc' | 'desc';
     }>;
+    take?: number;
   }): Promise<WorkflowRunRecord[]>;
   findUnique?(args: {
     where: {
@@ -262,6 +270,27 @@ export class PrismaWorkflowRunRepository implements WorkflowRunRepository {
         workflowId,
       },
       orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    return records.map(toWorkflowRun);
+  }
+
+  async listRecentCompletedRunsByRepositoryId(
+    repositoryId: string,
+    limit: number,
+  ): Promise<WorkflowRun[]> {
+    const records = await this.options.workflowRun.findMany({
+      where: {
+        workflow: {
+          repositoryId,
+        },
+        status: 'completed',
+        conclusion: {
+          not: null,
+        },
+      },
+      orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
+      take: limit,
     });
 
     return records.map(toWorkflowRun);

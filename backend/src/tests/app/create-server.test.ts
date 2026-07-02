@@ -377,6 +377,27 @@ const createProtectedServer = (overrides?: {
         workflowRunStore
           .filter((workflowRun) => workflowRun.workflowId === workflowId)
           .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+      listRecentCompletedRunsByRepositoryId: async (repositoryId, limit) => {
+        const repositoryWorkflowIds = new Set(
+          workflowStore
+            .filter((workflow) => workflow.repositoryId === repositoryId)
+            .map((workflow) => workflow.id),
+        );
+
+        return workflowRunStore
+          .filter(
+            (workflowRun) =>
+              repositoryWorkflowIds.has(workflowRun.workflowId) &&
+              workflowRun.status === 'completed' &&
+              workflowRun.conclusion !== null,
+          )
+          .sort(
+            (left, right) =>
+              (right.startedAt?.getTime() ?? right.createdAt.getTime()) -
+              (left.startedAt?.getTime() ?? left.createdAt.getTime()),
+          )
+          .slice(0, limit);
+      },
       findRunById: async (id) =>
         workflowRunStore.find((workflowRun) => workflowRun.id === id) ?? null,
       createJob: async (input) =>
@@ -2498,6 +2519,154 @@ describe('createServer', () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/v1/repositories/repo_123/policy-checks',
+    });
+
+    expect(response.statusCode).toBe(401);
+
+    await server.close();
+  });
+
+  it('should compute the automation health score for a repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      workflows: [
+        buildWorkflow({ name: 'Lint', path: '.github/workflows/lint.yml' }),
+        buildWorkflow({
+          id: 'workflow_456',
+          githubWorkflowId: 'workflow-gh-456',
+          name: 'Test',
+          path: '.github/workflows/test.yml',
+        }),
+      ],
+      workflowRuns: [
+        buildWorkflowRun(),
+        buildWorkflowRun({
+          id: 'run_456',
+          githubRunId: 'run-gh-456',
+          conclusion: 'failure',
+          startedAt: new Date('2026-03-30T17:00:00.000Z'),
+        }),
+      ],
+      pullRequests: [buildPullRequest()],
+      codexReviewSummaries: [buildCodexReviewSummary()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/automation-health',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    const { health } = response.json() as {
+      health: {
+        repositoryId: string;
+        fullName: string;
+        score: number;
+        grade: string;
+        signals: Array<{ policyKey: string; status: string }>;
+        ciReliability: {
+          consideredRunCount: number;
+          successfulRunCount: number;
+          earnedPoints: number;
+        };
+        blockersPenalty: { openBlockersCount: number; penaltyPoints: number };
+        computedAt: string;
+      };
+    };
+
+    expect(health.repositoryId).toBe('repo_123');
+    expect(health.fullName).toBe('forgeops/backend');
+    expect(health.signals).toHaveLength(6);
+    // sinais: ci(15) + lint(10) + test(15) + review via summary(15) = 55
+    // reliability: 1 sucesso / 2 considerados -> round(12.5) = 13
+    // penalidade: 1 blocker aberto -> 3
+    expect(health.ciReliability).toMatchObject({
+      consideredRunCount: 2,
+      successfulRunCount: 1,
+      earnedPoints: 13,
+    });
+    expect(health.blockersPenalty).toEqual({
+      openBlockersCount: 1,
+      penaltyPoints: 3,
+    });
+    expect(health.score).toBe(65);
+    expect(health.grade).toBe('attention');
+    expect(new Date(health.computedAt).getTime()).not.toBeNaN();
+
+    await server.close();
+  });
+
+  it('should list the automation health overview sorted by score', async () => {
+    const server = createProtectedServer({
+      repositories: [
+        buildRepository(),
+        buildRepository({
+          id: 'repo_456',
+          githubRepoId: '987654321',
+          name: 'frontend',
+          fullName: 'forgeops/frontend',
+        }),
+      ],
+      workflows: [
+        buildWorkflow({
+          repositoryId: 'repo_456',
+          name: 'Lint e Test',
+          path: '.github/workflows/lint-test.yml',
+        }),
+      ],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/automation-health',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    const { repositories } = response.json() as {
+      repositories: Array<{ repositoryId: string; score: number }>;
+    };
+
+    expect(repositories).toHaveLength(2);
+    expect(repositories[0]?.repositoryId).toBe('repo_123');
+    expect(repositories[0]!.score).toBeLessThanOrEqual(repositories[1]!.score);
+
+    await server.close();
+  });
+
+  it('should return 404 for automation health of an unknown repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_missing/automation-health',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+
+    await server.close();
+  });
+
+  it('should require authentication for automation health routes', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/automation-health',
     });
 
     expect(response.statusCode).toBe(401);

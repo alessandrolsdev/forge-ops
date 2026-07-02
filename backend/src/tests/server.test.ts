@@ -51,6 +51,7 @@ const createRuntimeTestServer = (env: NodeJS.ProcessEnv) =>
         throw new Error('Not implemented in runtime bootstrap test.');
       },
       listRunsByWorkflowId: async () => [],
+      listRecentCompletedRunsByRepositoryId: async () => [],
       findRunById: async () => null,
       createJob: async () => {
         throw new Error('Not implemented in runtime bootstrap test.');
