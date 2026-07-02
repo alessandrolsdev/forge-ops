@@ -855,4 +855,182 @@ describe('PullRequestService', () => {
       PullRequestNotFoundError,
     );
   });
+
+  it('should aggregate review insights across open and closed pull requests', async () => {
+    const openPullRequest = buildPullRequest();
+    const mergedPullRequest = buildPullRequest({
+      id: 'pr_456',
+      githubPrId: '987654322',
+      number: 43,
+      state: 'merged',
+    });
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi
+          .fn()
+          .mockResolvedValue([openPullRequest, mergedPullRequest]),
+        findById: vi.fn(),
+      },
+      codexReviewSummaryRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([
+          buildCodexReviewSummary({
+            pullRequestId: openPullRequest.id,
+            blockersCount: 2,
+            risksCount: 1,
+            suggestionsCount: 3,
+            updatedAt: new Date('2026-03-31T18:50:00.000Z'),
+          }),
+          buildCodexReviewSummary({
+            id: 'summary_456',
+            pullRequestId: mergedPullRequest.id,
+            blockersCount: 1,
+            risksCount: 2,
+            suggestionsCount: 1,
+            updatedAt: new Date('2026-04-01T09:00:00.000Z'),
+          }),
+        ]),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+    });
+
+    await expect(
+      service.getReviewInsightsByRepositoryId('repo_123'),
+    ).resolves.toEqual({
+      repositoryId: 'repo_123',
+      openPullRequestCount: 1,
+      reviewedPullRequestCount: 2,
+      openBlockersCount: 2,
+      totalBlockersCount: 3,
+      totalRisksCount: 3,
+      totalSuggestionsCount: 4,
+      lastReviewedAt: new Date('2026-04-01T09:00:00.000Z'),
+    });
+  });
+
+  it('should return zeroed review insights when nothing was reviewed', async () => {
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(buildRepository()),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
+        findById: vi.fn(),
+      },
+      codexReviewSummaryRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn().mockResolvedValue([]),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+    });
+
+    await expect(
+      service.getReviewInsightsByRepositoryId('repo_123'),
+    ).resolves.toEqual({
+      repositoryId: 'repo_123',
+      openPullRequestCount: 0,
+      reviewedPullRequestCount: 0,
+      openBlockersCount: 0,
+      totalBlockersCount: 0,
+      totalRisksCount: 0,
+      totalSuggestionsCount: 0,
+      lastReviewedAt: null,
+    });
+  });
+
+  it('should fail review insights with repository not found for unknown repositories', async () => {
+    const service = new PullRequestService({
+      repositoryRegistryRepository: {
+        create: vi.fn(),
+        list: vi.fn(),
+        findById: vi.fn().mockResolvedValue(null),
+        deleteById: vi.fn(),
+      },
+      pullRequestRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        listByRepositoryId: vi.fn(),
+        findById: vi.fn(),
+      },
+      codexReviewSummaryRepository: {
+        create: vi.fn(),
+        upsert: vi.fn(),
+        findByPullRequestId: vi.fn(),
+        listByRepositoryId: vi.fn(),
+      },
+      githubBoundary: {
+        mode: 'github-app',
+        configured: true,
+        getStatus: () => ({
+          mode: 'github-app',
+          configured: true,
+          appId: '12****56',
+          installationId: '78****10',
+          webhookConfigured: true,
+        }),
+        assertConfigured: () => undefined,
+        listInstallationRepositories: async () => [],
+        listRepositoryWorkflows: async () => [],
+        listWorkflowRuns: async () => [],
+        listWorkflowRunJobs: async () => [],
+        listPullRequests: async () => [],
+        listPullRequestReviewComments: async () => [],
+      },
+    });
+
+    await expect(
+      service.getReviewInsightsByRepositoryId('repo_missing'),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError);
+  });
 });

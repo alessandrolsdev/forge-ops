@@ -178,4 +178,30 @@ describe('PrismaCodexReviewSummaryRepository', () => {
       },
     });
   });
+
+  it('should list codex review summaries by repository ordered by recency', async () => {
+    const create = vi.fn();
+    const upsert = vi.fn();
+    const findUnique = vi.fn();
+    const findMany = vi.fn().mockResolvedValue([buildRecord()]);
+    const repository = new PrismaCodexReviewSummaryRepository({
+      create,
+      upsert,
+      findUnique,
+      findMany,
+    });
+
+    await expect(repository.listByRepositoryId('repo_123')).resolves.toEqual([
+      buildRecord(),
+    ]);
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        pullRequest: {
+          repositoryId: 'repo_123',
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+  });
 });

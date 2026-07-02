@@ -2326,6 +2326,56 @@ describe('createServer', () => {
     await server.close();
   });
 
+  it('should return aggregated review insights for a repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+      pullRequests: [buildPullRequest()],
+      codexReviewSummaries: [buildCodexReviewSummary()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_123/review-insights',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      insights: {
+        repositoryId: 'repo_123',
+        openPullRequestCount: 1,
+        reviewedPullRequestCount: 1,
+        openBlockersCount: 1,
+        totalBlockersCount: 1,
+        totalRisksCount: 2,
+        totalSuggestionsCount: 1,
+        lastReviewedAt: '2026-03-31T18:50:00.000Z',
+      },
+    });
+
+    await server.close();
+  });
+
+  it('should return 404 for review insights of an unknown repository', async () => {
+    const server = createProtectedServer({
+      repositories: [buildRepository()],
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/repositories/repo_missing/review-insights',
+      headers: {
+        authorization: 'Bearer trusted-token',
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+
+    await server.close();
+  });
+
   it('should return an empty policy check list before the first evaluation', async () => {
     const server = createProtectedServer({
       repositories: [buildRepository()],

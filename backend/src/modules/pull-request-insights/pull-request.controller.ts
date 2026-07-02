@@ -6,6 +6,7 @@ import type {
   PullRequestDetail,
   PullRequestCodexReviewRequest,
   PullRequestService,
+  RepositoryReviewInsights,
 } from './pull-request.service.js';
 
 const pullRequestParamsSchema = z.object({
@@ -84,6 +85,26 @@ interface GetPullRequestDetailRoute extends RouteGenericInterface {
   Reply: PullRequestDetailResponse;
 }
 
+interface ReviewInsightsResponse {
+  repositoryId: string;
+  openPullRequestCount: number;
+  reviewedPullRequestCount: number;
+  openBlockersCount: number;
+  totalBlockersCount: number;
+  totalRisksCount: number;
+  totalSuggestionsCount: number;
+  lastReviewedAt: string | null;
+}
+
+interface GetReviewInsightsRoute extends RouteGenericInterface {
+  Params: {
+    repositoryId: string;
+  };
+  Reply: {
+    insights: ReviewInsightsResponse;
+  };
+}
+
 interface RequestPullRequestCodexReviewRoute extends RouteGenericInterface {
   Params: {
     repositoryId: string;
@@ -139,6 +160,21 @@ const toPullRequestDetailResponse = (
   };
 };
 
+const toReviewInsightsResponse = (
+  insights: RepositoryReviewInsights,
+): ReviewInsightsResponse => {
+  return {
+    repositoryId: insights.repositoryId,
+    openPullRequestCount: insights.openPullRequestCount,
+    reviewedPullRequestCount: insights.reviewedPullRequestCount,
+    openBlockersCount: insights.openBlockersCount,
+    totalBlockersCount: insights.totalBlockersCount,
+    totalRisksCount: insights.totalRisksCount,
+    totalSuggestionsCount: insights.totalSuggestionsCount,
+    lastReviewedAt: insights.lastReviewedAt?.toISOString() ?? null,
+  };
+};
+
 const toPullRequestCodexReviewRequestResponse = (
   request: PullRequestCodexReviewRequest,
 ) => {
@@ -188,6 +224,24 @@ export const registerPullRequestRoutes = (
       );
 
       return toPullRequestDetailResponse(detail);
+    },
+  );
+
+  app.get<GetReviewInsightsRoute>(
+    '/api/v1/repositories/:repositoryId/review-insights',
+    {
+      config: {
+        access: 'protected',
+      },
+    },
+    async (request) => {
+      const { repositoryId } = pullRequestParamsSchema.parse(request.params);
+      const insights =
+        await pullRequestService.getReviewInsightsByRepositoryId(repositoryId);
+
+      return {
+        insights: toReviewInsightsResponse(insights),
+      };
     },
   );
 

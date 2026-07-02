@@ -64,6 +64,17 @@ export interface PullRequestCodexReviewRequest {
   status: 'requested';
 }
 
+export interface RepositoryReviewInsights {
+  repositoryId: string;
+  openPullRequestCount: number;
+  reviewedPullRequestCount: number;
+  openBlockersCount: number;
+  totalBlockersCount: number;
+  totalRisksCount: number;
+  totalSuggestionsCount: number;
+  lastReviewedAt: Date | null;
+}
+
 const MANUAL_CODEX_REVIEW_LABEL = 'codex-review' as const;
 
 export class PullRequestService {
@@ -163,6 +174,65 @@ export class PullRequestService {
           startedAt: workflow.startedAt,
           finishedAt: workflow.finishedAt,
         })),
+    };
+  }
+
+  async getReviewInsightsByRepositoryId(
+    repositoryId: string,
+  ): Promise<RepositoryReviewInsights> {
+    const repository =
+      await this.options.repositoryRegistryRepository.findById(repositoryId);
+
+    if (!repository) {
+      throw new RepositoryNotFoundError();
+    }
+
+    if (!this.options.codexReviewSummaryRepository) {
+      throw new Error('Review insights dependencies are not configured.');
+    }
+
+    const [pullRequests, reviewSummaries] = await Promise.all([
+      this.options.pullRequestRepository.listByRepositoryId(repositoryId),
+      this.options.codexReviewSummaryRepository.listByRepositoryId(
+        repositoryId,
+      ),
+    ]);
+
+    const openPullRequestIds = new Set(
+      pullRequests
+        .filter((pullRequest) => pullRequest.state === 'open')
+        .map((pullRequest) => pullRequest.id),
+    );
+
+    let openBlockersCount = 0;
+    let totalBlockersCount = 0;
+    let totalRisksCount = 0;
+    let totalSuggestionsCount = 0;
+    let lastReviewedAt: Date | null = null;
+
+    for (const summary of reviewSummaries) {
+      totalBlockersCount += summary.blockersCount;
+      totalRisksCount += summary.risksCount;
+      totalSuggestionsCount += summary.suggestionsCount;
+
+      if (openPullRequestIds.has(summary.pullRequestId)) {
+        openBlockersCount += summary.blockersCount;
+      }
+
+      if (!lastReviewedAt || summary.updatedAt > lastReviewedAt) {
+        lastReviewedAt = summary.updatedAt;
+      }
+    }
+
+    return {
+      repositoryId: repository.id,
+      openPullRequestCount: openPullRequestIds.size,
+      reviewedPullRequestCount: reviewSummaries.length,
+      openBlockersCount,
+      totalBlockersCount,
+      totalRisksCount,
+      totalSuggestionsCount,
+      lastReviewedAt,
     };
   }
 
