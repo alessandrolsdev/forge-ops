@@ -1642,4 +1642,89 @@ describe('RepositoriesView', () => {
       expect(screen.getByText('Repository was not found.')).toBeInTheDocument();
     });
   });
+
+  it('should render review insights and the sync audit trail for the selected repository', async () => {
+    const client: ForgeOpsApiClient = {
+      getHealth: vi.fn(),
+      getRepositories: vi.fn<ForgeOpsApiClient['getRepositories']>().mockResolvedValue([
+        {
+          id: 'repo_123',
+          githubRepoId: '123456789',
+          owner: 'forgeops',
+          name: 'backend',
+          fullName: 'forgeops/backend',
+          defaultBranch: 'main',
+          isActive: true,
+          createdAt: '2026-03-28T00:00:00.000Z',
+          updatedAt: '2026-03-28T00:00:00.000Z',
+        },
+      ]),
+      getRepositoryDiscovery: vi
+        .fn<ForgeOpsApiClient['getRepositoryDiscovery']>()
+        .mockResolvedValue([]),
+      getRepositoryWorkflows: vi
+        .fn<ForgeOpsApiClient['getRepositoryWorkflows']>()
+        .mockResolvedValue([]),
+      getPullRequests: vi.fn<ForgeOpsApiClient['getPullRequests']>().mockResolvedValue([]),
+      getPullRequestDetail: vi.fn(),
+      getWorkflowRuns: vi.fn<ForgeOpsApiClient['getWorkflowRuns']>().mockResolvedValue([]),
+      getWorkflowRunDetail: vi.fn(),
+      requestPullRequestCodexReview: vi.fn(),
+      createRepository: vi.fn(),
+      getAutomationHealthOverview: vi.fn(),
+      getRepositoryAutomationHealth: vi.fn(),
+      getRepositoryPolicyChecks: vi.fn(),
+      evaluateRepositoryPolicyChecks: vi.fn(),
+      getRepositoryReviewInsights: vi
+        .fn<ForgeOpsApiClient['getRepositoryReviewInsights']>()
+        .mockResolvedValue({
+          repositoryId: 'repo_123',
+          openPullRequestCount: 1,
+          reviewedPullRequestCount: 2,
+          openBlockersCount: 2,
+          totalBlockersCount: 3,
+          totalRisksCount: 4,
+          totalSuggestionsCount: 5,
+          lastReviewedAt: '2026-07-01T09:00:00.000Z',
+        }),
+      getRepositorySyncEvents: vi
+        .fn<ForgeOpsApiClient['getRepositorySyncEvents']>()
+        .mockResolvedValue([
+          {
+            id: 'sync_1',
+            repositoryId: 'repo_123',
+            type: 'repository_connected',
+            status: 'succeeded',
+            details: 'Repositorio forgeops/backend conectado e ingerido.',
+            createdAt: '2026-07-01T08:00:00.000Z',
+          },
+        ]),
+    };
+
+    renderRepositoriesView(client);
+
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'trusted-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use access token' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('open blockers: 2')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('open PRs: 1')).toBeInTheDocument();
+    expect(screen.getByText('reviewed PRs: 2')).toBeInTheDocument();
+    expect(screen.getByText('Repository connected')).toBeInTheDocument();
+    expect(
+      screen.getByText('Repositorio forgeops/backend conectado e ingerido.'),
+    ).toBeInTheDocument();
+    expect(client.getRepositoryReviewInsights).toHaveBeenCalledWith(
+      'trusted-token',
+      'repo_123',
+    );
+    expect(client.getRepositorySyncEvents).toHaveBeenCalledWith(
+      'trusted-token',
+      'repo_123',
+    );
+  });
 });

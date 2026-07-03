@@ -727,3 +727,61 @@ pre {
     flex-direction: column;
   }
 }
+
+.governance-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.sync-events-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.sync-events-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.sync-events-list__status {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sync-events-list__status--succeeded {
+  background: rgba(22, 163, 74, 0.14);
+  color: #166534;
+}
+
+.sync-events-list__status--failed {
+  background: rgba(220, 38, 38, 0.14);
+  color: #991b1b;
+}
+
+.sync-events-list__body {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.sync-events-list__timestamp {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .sync-events-list__item {
+    flex-direction: column;
+  }
+}

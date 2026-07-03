@@ -13,10 +13,12 @@ import {
   type PullRequestDetailResponse,
   type PullRequestItem,
   type RepositoryDiscoveryItem,
+  type SyncEventItem,
   type WorkflowCatalogItem,
   type WorkflowRunDetailResponse,
   type WorkflowRunItem,
 } from '@/lib/api/client';
+import { SyncEventsPanel } from './components/sync-events-panel';
 
 const STORAGE_KEY = 'forgeops.operator-access-token';
 const EMPTY_MONITORED_REPOSITORIES: MonitoredRepository[] = [];
@@ -26,6 +28,7 @@ const EMPTY_PULL_REQUESTS: PullRequestItem[] = [];
 const EMPTY_PULL_REQUEST_WORKFLOWS: PullRequestDetailResponse['workflows'] = [];
 const EMPTY_WORKFLOW_RUNS: WorkflowRunItem[] = [];
 const EMPTY_WORKFLOW_RUN_DETAIL_JOBS: WorkflowRunDetailResponse['jobs'] = [];
+const EMPTY_SYNC_EVENTS: SyncEventItem[] = [];
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof ApiClientError) {
@@ -233,6 +236,21 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     retry: false,
   });
 
+  const reviewInsightsQuery = useQuery({
+    queryKey: ['review-insights', accessToken, selectedRepositoryId],
+    queryFn: () =>
+      client.getRepositoryReviewInsights(accessToken, selectedRepositoryId!),
+    enabled: hasAccessToken && selectedRepositoryId !== null,
+    retry: false,
+  });
+
+  const syncEventsQuery = useQuery({
+    queryKey: ['sync-events', accessToken, selectedRepositoryId],
+    queryFn: () => client.getRepositorySyncEvents(accessToken, selectedRepositoryId!),
+    enabled: hasAccessToken && selectedRepositoryId !== null,
+    retry: false,
+  });
+
   const createRepositoryMutation = useMutation({
     mutationFn: (repository: RepositoryDiscoveryItem) =>
       client.createRepository(accessToken, {
@@ -354,6 +372,12 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
     });
     void queryClient.removeQueries({
       queryKey: ['workflow-run-detail'],
+    });
+    void queryClient.removeQueries({
+      queryKey: ['review-insights'],
+    });
+    void queryClient.removeQueries({
+      queryKey: ['sync-events'],
     });
   };
 
@@ -906,6 +930,66 @@ export function RepositoriesView({ client = createApiClient() }: RepositoriesVie
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+        )}
+      </Card>
+
+      <Card eyebrow="Governance" title="Review insights and sync audit trail">
+        {!hasAccessToken ? (
+          <p className="empty-state">
+            Add an operator token to inspect review insights and the sync audit trail.
+          </p>
+        ) : selectedRepositoryId === null ? (
+          <p className="empty-state">
+            Select a monitored repository to inspect its governance signals.
+          </p>
+        ) : (
+          <div className="governance-panel">
+            <div className="governance-panel__insights">
+              {reviewInsightsQuery.isLoading ? (
+                <p className="empty-state">Loading review insights...</p>
+              ) : reviewInsightsQuery.isError ? (
+                <p className="empty-state">
+                  {getErrorMessage(
+                    reviewInsightsQuery.error,
+                    'Unable to load review insights.',
+                  )}
+                </p>
+              ) : reviewInsightsQuery.data ? (
+                <div className="workflow-runs-list__meta">
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    open PRs: {reviewInsightsQuery.data.openPullRequestCount}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    reviewed PRs: {reviewInsightsQuery.data.reviewedPullRequestCount}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    open blockers: {reviewInsightsQuery.data.openBlockersCount}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    total blockers: {reviewInsightsQuery.data.totalBlockersCount}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    risks: {reviewInsightsQuery.data.totalRisksCount}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    suggestions: {reviewInsightsQuery.data.totalSuggestionsCount}
+                  </span>
+                  <span className="repository-list__badge repository-list__badge--neutral">
+                    last review: {formatTimestamp(reviewInsightsQuery.data.lastReviewedAt)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            {syncEventsQuery.isLoading ? (
+              <p className="empty-state">Loading sync events...</p>
+            ) : syncEventsQuery.isError ? (
+              <p className="empty-state">
+                {getErrorMessage(syncEventsQuery.error, 'Unable to load sync events.')}
+              </p>
+            ) : (
+              <SyncEventsPanel syncEvents={syncEventsQuery.data ?? EMPTY_SYNC_EVENTS} />
             )}
           </div>
         )}
