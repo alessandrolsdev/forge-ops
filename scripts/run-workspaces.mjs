@@ -4,7 +4,7 @@ import process from 'node:process';
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const task = process.argv[2];
 const extraArgs = process.argv.slice(3);
-const workspaces = ['backend', 'frontend'];
+const workspaces = ['packages/core', 'backend', 'frontend'];
 
 if (!task) {
   console.error('A task name is required.');

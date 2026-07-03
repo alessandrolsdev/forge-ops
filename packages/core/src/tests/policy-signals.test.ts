@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluatePolicySignals,
   type PolicySignalWorkflow,
-} from '../../../modules/policy-engine/policy-signals.js';
+} from '../policy-signals.js';
 import type {
   PolicyCheckStatus,
   PolicyKey,
-} from '../../../modules/policy-engine/policy-check.entity.js';
+} from '../policy-signals.js';
 
 const buildWorkflow = (
   overrides: Partial<PolicySignalWorkflow> = {},

@@ -1,10 +1,28 @@
-import type { Workflow } from '../workflow-catalog/workflow.entity.js';
-import type { PolicyCheckStatus, PolicyKey } from './policy-check.entity.js';
+export type PolicyKey =
+  | 'ci_workflow_present'
+  | 'lint_workflow_present'
+  | 'test_workflow_present'
+  | 'automated_review_present'
+  | 'reusable_workflow_present'
+  | 'security_workflow_present';
 
-export type PolicySignalWorkflow = Pick<
-  Workflow,
-  'name' | 'path' | 'state' | 'sourceType'
->;
+export type PolicyCheckStatus = 'compliant' | 'non_compliant';
+
+export type WorkflowState =
+  | 'active'
+  | 'deleted'
+  | 'disabled_fork'
+  | 'disabled_inactivity'
+  | 'disabled_manually';
+
+export type WorkflowSourceType = 'local' | 'reusable';
+
+export interface PolicySignalWorkflow {
+  name: string;
+  path: string;
+  state: WorkflowState;
+  sourceType: WorkflowSourceType;
+}
 
 export interface PolicySignalInput {
   workflows: PolicySignalWorkflow[];

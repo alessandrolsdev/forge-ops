@@ -17,6 +17,9 @@ importers:
 
   backend:
     dependencies:
+      '@forgeops/core':
+        specifier: workspace:*
+        version: link:../packages/core
       '@prisma/client':
         specifier: ^6.19.2
         version: 6.19.2(prisma@6.19.2(magicast@0.3.5)(typescript@5.9.3))(typescript@5.9.3)
@@ -109,6 +112,30 @@ importers:
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
+  packages/core:
+    devDependencies:
+      '@forgeops/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@forgeops/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.15
+      '@vitest/coverage-v8':
+        specifier: ^2.1.8
+        version: 2.1.9(vitest@2.1.9(@types/node@22.19.15)(jsdom@25.0.1))
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.4(jiti@2.6.1)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

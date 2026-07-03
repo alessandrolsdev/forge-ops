@@ -15,6 +15,7 @@ RUN corepack enable
 COPY . .
 
 RUN pnpm install --frozen-lockfile \
+  && pnpm --filter @forgeops/core build \
   && pnpm --filter @forgeops/backend prisma:generate
 
 FROM workspace-base AS frontend-dev
@@ -27,4 +28,4 @@ FROM workspace-base AS backend-dev
 
 WORKDIR /workspace/backend
 
-CMD ["sh", "-lc", "pnpm --filter @forgeops/backend prisma:generate && node ../scripts/run-bin.mjs tsx watch src/server.ts"]
+CMD ["sh", "-lc", "pnpm --filter @forgeops/core build && pnpm --filter @forgeops/backend prisma:generate && node ../scripts/run-bin.mjs tsx watch src/server.ts"]

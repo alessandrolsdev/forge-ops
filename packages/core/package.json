@@ -1,0 +1,34 @@
+{
+  "name": "@forgeops/core",
+  "version": "0.1.0",
+  "description": "Motor de automation health do ForgeOps: sinais de politica, formula do score e scanner local de workflows.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json",
+    "dev": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json --watch",
+    "lint": "node ../../scripts/run-bin.mjs eslint .",
+    "typecheck": "node ../../scripts/run-bin.mjs tsc --project tsconfig.json --noEmit",
+    "test": "node ../../scripts/run-bin.mjs vitest run --coverage"
+  },
+  "devDependencies": {
+    "@forgeops/eslint-config": "workspace:*",
+    "@forgeops/tsconfig": "workspace:*",
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

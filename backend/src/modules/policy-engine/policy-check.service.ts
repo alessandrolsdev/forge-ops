@@ -6,7 +6,7 @@ import type { WorkflowRepository } from '../workflow-catalog/workflow.repository
 import type { CodexReviewSummaryRepository } from '../pull-request-insights/codex-review-summary.repository.js';
 import type { PolicyCheck } from './policy-check.entity.js';
 import type { PolicyCheckRepository } from './policy-check.repository.js';
-import { evaluatePolicySignals } from './policy-signals.js';
+import { evaluatePolicySignals } from '@forgeops/core';
 import {
   noopSyncEventRecorder,
   type SyncEventRecorder,
