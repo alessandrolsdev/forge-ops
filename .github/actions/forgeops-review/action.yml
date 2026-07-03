@@ -1,0 +1,403 @@
+name: ForgeOps Review
+description: >-
+  Review automatizado de pull requests com IA (OpenRouter com fallback Gemini),
+  publicado como comentario advisory. Suporta os eventos pull_request e
+  issue_comment (gatilho "@forgeops review").
+
+inputs:
+  openrouter-api-key:
+    description: Chave da OpenRouter API usada como provider primario.
+    required: false
+    default: ''
+  openrouter-model:
+    description: Modelo da OpenRouter (ex. anthropic/claude-sonnet-4.5).
+    required: false
+    default: ''
+  gemini-api-key:
+    description: Chave da Gemini API usada como fallback.
+    required: false
+    default: ''
+  gemini-model:
+    description: Modelo da Gemini API.
+    required: false
+    default: gemini-2.5-flash
+  github-token:
+    description: Token usado para ler o pull request e publicar o comentario.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Collect pull request context
+      id: pr-context
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        output_dir="$RUNNER_TEMP/forgeops-review"
+        mkdir -p "$output_dir"
+
+        event_name="$GITHUB_EVENT_NAME"
+
+        if [ "$event_name" = "issue_comment" ]; then
+          pr_number=$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")
+        else
+          pr_number=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+        fi
+
+        if [ -z "$pr_number" ] || [ "$pr_number" = "null" ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "No pull request number could be resolved from the event payload."
+          exit 0
+        fi
+
+        api_base="${GITHUB_API_URL:-https://api.github.com}"
+        api_url="$api_base/repos/$GITHUB_REPOSITORY/pulls/$pr_number"
+
+        pr_payload=$(
+          curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$api_url"
+        )
+
+        is_fork=$(printf '%s' "$pr_payload" | jq -r '.head.repo.fork // false')
+
+        if [ "$is_fork" = "true" ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "ForgeOps review is skipped for fork pull requests."
+          exit 0
+        fi
+
+        printf '%s' "$pr_payload" | jq '{
+          title: (.title // ""),
+          body: (.body // ""),
+          sha: .head.sha,
+          number: .number
+        }' > "$output_dir/pr.json"
+
+        max_diff_characters=200000
+        raw_diff=$(
+          curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3.diff" \
+            "$api_url"
+        )
+
+        if [ "${#raw_diff}" -gt "$max_diff_characters" ]; then
+          diff="${raw_diff:0:$max_diff_characters}"$'\n\n'"[diff truncated after ${max_diff_characters} characters]"
+        else
+          diff="$raw_diff"
+        fi
+
+        printf '%s' "$diff" > "$output_dir/pr.diff"
+
+        echo "skip=false" >> "$GITHUB_OUTPUT"
+        echo "context_dir=$output_dir" >> "$GITHUB_OUTPUT"
+
+    - name: Run review via OpenRouter
+      id: openrouter-review
+      if: ${{ steps.pr-context.outputs.skip == 'false' && inputs.openrouter-api-key != '' && inputs.openrouter-model != '' }}
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        OPENROUTER_MODEL: ${{ inputs.openrouter-model }}
+        PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        PROMPT_PATH: ${{ github.action_path }}/prompts/codex-review.md
+      run: |
+        set -euo pipefail
+
+        request_path="$RUNNER_TEMP/forgeops-review/openrouter-request.json"
+        response_path="$RUNNER_TEMP/forgeops-review/openrouter-response.json"
+        review_path="$RUNNER_TEMP/forgeops-review/openrouter-review.md"
+        fallback_reason="A OpenRouter API nao produziu um review publicavel."
+
+        jq -n \
+          --arg model "$OPENROUTER_MODEL" \
+          --rawfile prompt "$PROMPT_PATH" \
+          --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
+          --rawfile diff "$PR_CONTEXT_DIR/pr.diff" \
+          '{
+            model: $model,
+            temperature: 0.1,
+            messages: [
+              { role: "system", content: $prompt },
+              {
+                role: "user",
+                content: (
+                  "PR title:\n" + ($pr[0].title // "(empty)") +
+                  "\n\nPR body:\n" + ($pr[0].body // "(empty)") +
+                  "\n\nUnified diff:\n" + $diff
+                )
+              }
+            ]
+          }' > "$request_path"
+
+        for attempt in 1 2; do
+          set +e
+          http_status=$(
+            curl -sS \
+              -o "$response_path" \
+              -w "%{http_code}" \
+              https://openrouter.ai/api/v1/chat/completions \
+              -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+              -H "Content-Type: application/json" \
+              -H "HTTP-Referer: https://github.com/$GITHUB_REPOSITORY" \
+              -H "X-Title: ForgeOps Review" \
+              --data @"$request_path"
+          )
+          curl_exit=$?
+          set -e
+
+          if [ "$curl_exit" -ne 0 ]; then
+            fallback_reason="A chamada para a OpenRouter API falhou antes de retornar um payload."
+          elif [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            remote_message=$(jq -r '.error?.message // .message // empty' "$response_path" 2>/dev/null || true)
+            if [ -n "$remote_message" ]; then
+              fallback_reason="A OpenRouter API respondeu com status HTTP $http_status: $remote_message"
+            else
+              fallback_reason="A OpenRouter API respondeu com status HTTP $http_status."
+            fi
+          else
+            jq -r '
+              def text_value:
+                if . == null then empty
+                elif type == "string" then .
+                elif type == "object" then .text // empty
+                else empty
+                end;
+
+              [
+                (.choices[0]?.message?.content | text_value),
+                (.choices[]?.message?.content | text_value),
+                (.choices[0]?.message?.content[]? | select((.type // "") == "text") | (.text // empty)),
+                (.choices[]?.message?.content[]? | select((.type // "") == "text") | (.text // empty))
+              ]
+              | map(select(length > 0))
+              | unique
+              | join("\n\n")
+            ' "$response_path" > "$review_path"
+
+            if [ -s "$review_path" ] && [ "$(cat "$review_path")" != "null" ]; then
+              echo "status=completed" >> "$GITHUB_OUTPUT"
+              echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+              echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            fallback_reason="A OpenRouter API respondeu, mas nao gerou texto publicavel no formato esperado."
+          fi
+
+          if [ "$attempt" -lt 2 ]; then
+            echo "OpenRouter attempt $attempt failed; retrying once before falling back."
+          fi
+        done
+
+        echo "status=failed" >> "$GITHUB_OUTPUT"
+        echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+        echo "fallback_reason=$fallback_reason" >> "$GITHUB_OUTPUT"
+
+    - name: Run review via Gemini fallback
+      id: gemini-review
+      if: ${{ steps.pr-context.outputs.skip == 'false' && inputs.gemini-api-key != '' && steps.openrouter-review.outputs.status != 'completed' }}
+      shell: bash
+      env:
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        GEMINI_MODEL: ${{ inputs.gemini-model }}
+        PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        PROMPT_PATH: ${{ github.action_path }}/prompts/codex-review.md
+      run: |
+        set -euo pipefail
+
+        request_path="$RUNNER_TEMP/forgeops-review/gemini-request.json"
+        response_path="$RUNNER_TEMP/forgeops-review/gemini-response.json"
+        review_path="$RUNNER_TEMP/forgeops-review/gemini-review.md"
+        fallback_reason="A Gemini API nao produziu um review publicavel."
+
+        jq -n \
+          --rawfile prompt "$PROMPT_PATH" \
+          --slurpfile pr "$PR_CONTEXT_DIR/pr.json" \
+          --rawfile diff "$PR_CONTEXT_DIR/pr.diff" \
+          '{
+            systemInstruction: { role: "system", parts: [{ text: $prompt }] },
+            generationConfig: { temperature: 0.1 },
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: (
+                      "PR title:\n" + ($pr[0].title // "(empty)") +
+                      "\n\nPR body:\n" + ($pr[0].body // "(empty)") +
+                      "\n\nUnified diff:\n" + $diff
+                    )
+                  }
+                ]
+              }
+            ]
+          }' > "$request_path"
+
+        for attempt in 1 2; do
+          set +e
+          http_status=$(
+            curl -sS \
+              -o "$response_path" \
+              -w "%{http_code}" \
+              "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+              -H "Content-Type: application/json" \
+              --data @"$request_path"
+          )
+          curl_exit=$?
+          set -e
+
+          if [ "$curl_exit" -ne 0 ]; then
+            fallback_reason="A chamada para a Gemini API falhou antes de retornar um payload."
+          elif [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            remote_message=$(jq -r '.error?.message // .message // empty' "$response_path" 2>/dev/null || true)
+            if [ -n "$remote_message" ]; then
+              fallback_reason="A Gemini API respondeu com status HTTP $http_status: $remote_message"
+            else
+              fallback_reason="A Gemini API respondeu com status HTTP $http_status."
+            fi
+          else
+            jq -r '
+              [ .candidates[]?.content?.parts[]?.text ]
+              | map(select(type == "string" and length > 0))
+              | unique
+              | join("\n\n")
+            ' "$response_path" > "$review_path"
+
+            if [ -s "$review_path" ] && [ "$(cat "$review_path")" != "null" ]; then
+              echo "status=completed" >> "$GITHUB_OUTPUT"
+              echo "provider=gemini" >> "$GITHUB_OUTPUT"
+              echo "review_path=$review_path" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            fallback_reason="A Gemini API respondeu, mas nao gerou texto publicavel no formato esperado."
+          fi
+
+          if [ "$attempt" -lt 2 ]; then
+            echo "Gemini attempt $attempt failed; retrying once before falling back."
+          fi
+        done
+
+        echo "status=failed" >> "$GITHUB_OUTPUT"
+        echo "provider=gemini" >> "$GITHUB_OUTPUT"
+        echo "fallback_reason=$fallback_reason" >> "$GITHUB_OUTPUT"
+
+    - name: Publish review comment
+      if: ${{ always() && steps.pr-context.outputs.skip == 'false' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OPENROUTER_CONFIGURED: ${{ inputs.openrouter-api-key != '' && inputs.openrouter-model != '' }}
+        GEMINI_CONFIGURED: ${{ inputs.gemini-api-key != '' }}
+        OPENROUTER_STATUS: ${{ steps.openrouter-review.outputs.status }}
+        OPENROUTER_REVIEW_PATH: ${{ steps.openrouter-review.outputs.review_path }}
+        OPENROUTER_FALLBACK_REASON: ${{ steps.openrouter-review.outputs.fallback_reason }}
+        GEMINI_STATUS: ${{ steps.gemini-review.outputs.status }}
+        GEMINI_REVIEW_PATH: ${{ steps.gemini-review.outputs.review_path }}
+        GEMINI_FALLBACK_REASON: ${{ steps.gemini-review.outputs.fallback_reason }}
+        PR_CONTEXT_DIR: ${{ steps.pr-context.outputs.context_dir }}
+        MARKER_PATH: ${{ github.action_path }}/prompts/comment-marker.txt
+        FALLBACK_TEMPLATE_PATH: ${{ github.action_path }}/prompts/codex-fallback.md
+      run: |
+        set -euo pipefail
+
+        marker=$(cat "$MARKER_PATH")
+        pr_number=$(jq -r '.number' "$PR_CONTEXT_DIR/pr.json")
+        pr_sha=$(jq -r '.sha' "$PR_CONTEXT_DIR/pr.json")
+        api_base="${GITHUB_API_URL:-https://api.github.com}"
+        comments_url="$api_base/repos/$GITHUB_REPOSITORY/issues/$pr_number/comments"
+        comment_body_path="$RUNNER_TEMP/forgeops-review/final-comment.md"
+
+        if [ "$OPENROUTER_STATUS" = "completed" ]; then
+          review_status="completed"
+          review_provider="openrouter"
+          review_path="$OPENROUTER_REVIEW_PATH"
+          fallback_reason=""
+        elif [ "$GEMINI_STATUS" = "completed" ]; then
+          review_status="completed"
+          review_provider="gemini"
+          review_path="$GEMINI_REVIEW_PATH"
+          fallback_reason="$OPENROUTER_FALLBACK_REASON"
+        else
+          review_status="failed"
+          review_provider="none"
+          review_path=""
+          fallback_reason="${GEMINI_FALLBACK_REASON:-${OPENROUTER_FALLBACK_REASON:-Nenhum provider de review automatizado estava configurado para este repositorio.}}"
+        fi
+
+        if [ "$OPENROUTER_CONFIGURED" != "true" ] && [ "$GEMINI_CONFIGURED" != "true" ]; then
+          {
+            printf '%s\n' "$marker"
+            printf 'O ForgeOps review foi acionado, mas nenhum provider de IA esta configurado para este repositorio.\n\n'
+            printf 'Configure `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` (secrets/variables) e/ou `GEMINI_API_KEY`, ou rode `npx @forgeops/cli init --openrouter-key ...`.\n\n'
+            printf 'Revisao humana continua obrigatoria.\n'
+          } > "$comment_body_path"
+        elif [ "$review_status" = "completed" ] && [ -n "$review_path" ] && [ -f "$review_path" ]; then
+          {
+            printf '%s\n' "$marker"
+            printf 'Revisao automatica do ForgeOps concluida via %s para o commit %s.\n\n' "$review_provider" "$pr_sha"
+            cat "$review_path"
+            printf '\n\nEsta revisao e advisory e nao substitui a revisao humana.\n'
+          } > "$comment_body_path"
+        else
+          rendered=$(cat "$FALLBACK_TEMPLATE_PATH")
+          rendered=${rendered//\{\{sha\}\}/$pr_sha}
+          rendered=${rendered//\{\{reason\}\}/${fallback_reason:-A automacao executou, mas nao produziu conteudo publicavel.}}
+          {
+            printf '%s\n' "$marker"
+            printf '%s\n' "$rendered"
+          } > "$comment_body_path"
+        fi
+
+        set +e
+        comments_payload=$(
+          curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$comments_url?per_page=100"
+        )
+        comments_status=$?
+        set -e
+
+        if [ "$comments_status" -ne 0 ]; then
+          echo "Unable to list pull request comments; the review comment was not published."
+          exit 0
+        fi
+
+        existing_comment_id=$(
+          printf '%s' "$comments_payload" \
+            | jq -r --arg marker "$marker" '
+                .[]
+                | select((.body // "") | contains($marker))
+                | .id
+              ' \
+            | head -n 1
+        )
+
+        if [ -n "$existing_comment_id" ]; then
+          jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+            | curl -s -X PATCH \
+                "$api_base/repos/$GITHUB_REPOSITORY/issues/comments/$existing_comment_id" \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                -H "Content-Type: application/json" \
+                --data @- \
+                > /dev/null || echo "Unable to update the review comment."
+          exit 0
+        fi
+
+        jq -n --rawfile body "$comment_body_path" '{body: $body}' \
+          | curl -s -X POST \
+              "$comments_url" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              --data @- \
+              > /dev/null || echo "Unable to create the review comment."

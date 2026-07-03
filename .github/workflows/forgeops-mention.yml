@@ -1,0 +1,39 @@
+name: ForgeOps Mention
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ${{ format('forgeops-mention-{0}', github.event.issue.number) }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    name: forgeops-review
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@forgeops review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run ForgeOps review
+        uses: ./.github/actions/forgeops-review
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          openrouter-model: ${{ vars.OPENROUTER_MODEL || vars.CODEX_REVIEW_OPENROUTER_MODEL }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          gemini-model: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
