@@ -6,7 +6,7 @@
 
 ## Visao Geral
 
-ForgeOps e uma plataforma de governanca de automacoes de engenharia. O repositorio segue uma arquitetura de monorepo com `pnpm workspaces` e `Turborepo`, dividido em duas aplicacoes principais (`frontend` e `backend`) e dois pacotes compartilhados de configuracao (`eslint-config` e `tsconfig`).
+ForgeOps e uma plataforma de governanca de automacoes de engenharia. O repositorio segue uma arquitetura de monorepo com `pnpm workspaces` e `Turborepo`, dividido em duas aplicacoes principais (`frontend` e `backend`), dois pacotes de produto (`@forgeops/core` com o motor puro do framework e `@forgeops/cli` para distribuicao standalone via NPM) e dois pacotes compartilhados de configuracao (`eslint-config` e `tsconfig`).
 
 Hoje o codebase ja cobre:
 
@@ -20,6 +20,7 @@ Hoje o codebase ja cobre:
 - automation health score (0-100) calculado sob demanda por repositorio
 - trilha de auditoria de sincronizacoes (sync events)
 - dashboard de automation health no frontend
+- distribuicao standalone: CLI `forgeops` (init, score, dashboard local) e composite action `forgeops-review` com gatilho por comentario `@forgeops review`
 
 ---
 
@@ -30,6 +31,8 @@ forge-ops/
 |-- frontend/                   # Aplicacao web (Next.js 15 + React 19)
 |-- backend/                    # API REST (Fastify 4 + TypeScript strict)
 |-- packages/
+|   |-- core/                   # Motor puro: sinais, score e scanner local (@forgeops/core)
+|   |-- cli/                    # CLI forgeops: init, score, dashboard local (@forgeops/cli)
 |   |-- eslint-config/          # Configuracao ESLint compartilhada
 |   `-- tsconfig/               # Configuracao TypeScript base compartilhada
 |-- docs/

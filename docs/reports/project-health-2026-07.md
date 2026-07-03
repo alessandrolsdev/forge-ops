@@ -26,18 +26,18 @@ Entregas desta rodada: Policy Engine, Automation Health (score + dashboard), Rev
 
 Aplicando os seis sinais do policy engine ao proprio repositorio:
 
-| Sinal (policyKey)           | Peso | Status        | Evidencia                                                      |
-| --------------------------- | ---- | ------------- | -------------------------------------------------------------- |
-| `ci_workflow_present`       | 15   | compliant     | 7 workflows ativos em `.github/workflows/`                     |
-| `lint_workflow_present`     | 10   | compliant     | `lint.yml`                                                     |
-| `test_workflow_present`     | 15   | compliant     | `test.yml` (unit + coverage gate + integracao com Postgres)    |
-| `automated_review_present`  | 15   | compliant     | `codex-review.yml` + `manual-codex-review.yml`                 |
-| `reusable_workflow_present` | 10   | non_compliant | nenhum reusable workflow registrado                            |
-| `security_workflow_present` | 10   | compliant     | `actionlint.yml` (validacao de workflows; sem CodeQL dedicado) |
+| Sinal (policyKey)           | Peso | Status        | Evidencia                                                                                             |
+| --------------------------- | ---- | ------------- | ----------------------------------------------------------------------------------------------------- |
+| `ci_workflow_present`       | 15   | compliant     | 7 workflows ativos em `.github/workflows/`                                                            |
+| `lint_workflow_present`     | 10   | compliant     | `lint.yml`                                                                                            |
+| `test_workflow_present`     | 15   | compliant     | `test.yml` (unit + coverage gate + integracao com Postgres)                                           |
+| `automated_review_present`  | 15   | compliant     | `codex-review.yml` + `manual-codex-review.yml`                                                        |
+| `reusable_workflow_present` | 10   | non_compliant | nenhum reusable workflow registrado                                                                   |
+| `security_workflow_present` | 10   | non_compliant | sem workflow de seguranca dedicado (`actionlint` nao casa com os keywords security/codeql/audit/scan) |
 
-Sinais: **65/75**. Somando confiabilidade de CI (suite local integralmente verde no fechamento: 25/25) e sem blockers abertos (penalidade 0):
+Sinais: **55/75** (medido com `forgeops score` rodando o proprio motor contra este repositorio). Somando confiabilidade de CI (suite local integralmente verde no fechamento: 25/25) e sem blockers abertos (penalidade 0):
 
-**Score estimado: 90/100 - grade `healthy`.**
+**Score: 80/100 - grade `healthy`.**
 
 Gap declarado: adotar um reusable workflow e um scanner de seguranca dedicado (CodeQL/audit) levaria o score a 100.
 
