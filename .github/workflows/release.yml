@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          core_version=$(node -p "require('./packages/core/package.json').version")
+          cli_version=$(node -p "require('./packages/cli/package.json').version")
+
+          if [ "$tag" != "$core_version" ] || [ "$tag" != "$cli_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package versions (core=$core_version, cli=$cli_version)."
+            exit 1
+          fi
+
+      - name: Build packages
+        run: |
+          pnpm --filter @forgeops/core build
+          pnpm --filter @forgeops/cli build
+
+      - name: Validate before publishing
+        run: pnpm --filter @forgeops/core --filter @forgeops/cli test
+
+      - name: Publish @forgeops/core
+        run: pnpm --filter @forgeops/core publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @forgeops/cli
+        run: pnpm --filter @forgeops/cli publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

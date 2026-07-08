@@ -13,10 +13,31 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "keywords": [
+    "forgeops",
+    "automation-health",
+    "code-quality",
+    "policy",
+    "github-actions"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alessandrolsdev/forge-ops.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/alessandrolsdev/forge-ops/tree/main/packages/core",
+  "bugs": {
+    "url": "https://github.com/alessandrolsdev/forge-ops/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json",
+    "prepublishOnly": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json",
     "dev": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json --watch",
     "lint": "node ../../scripts/run-bin.mjs eslint .",
     "typecheck": "node ../../scripts/run-bin.mjs tsc --project tsconfig.json --noEmit",

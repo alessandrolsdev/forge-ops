@@ -10,17 +10,41 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "keywords": [
+    "forgeops",
+    "cli",
+    "automation-health",
+    "code-review",
+    "github-actions"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alessandrolsdev/forge-ops.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/alessandrolsdev/forge-ops/tree/main/packages/cli",
+  "bugs": {
+    "url": "https://github.com/alessandrolsdev/forge-ops/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json",
     "dev": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json --watch",
     "lint": "node ../../scripts/run-bin.mjs eslint .",
     "typecheck": "node ../../scripts/run-bin.mjs tsc --project tsconfig.json --noEmit",
-    "test": "node ../../scripts/run-bin.mjs vitest run --coverage"
+    "test": "node ../../scripts/run-bin.mjs vitest run --coverage",
+    "prepublishOnly": "node ../../scripts/run-bin.mjs tsc --project tsconfig.build.json"
   },
   "dependencies": {
-    "@forgeops/core": "workspace:*"
+    "@forgeops/core": "workspace:^"
   },
   "devDependencies": {
     "@forgeops/eslint-config": "workspace:*",
