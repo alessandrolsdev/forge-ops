@@ -1,0 +1,57 @@
+name: Reusable Node Checks
+
+on:
+  workflow_call:
+    inputs:
+      task:
+        description: Script pnpm do workspace a executar (ex. lint, typecheck).
+        required: true
+        type: string
+      generate-prisma-client:
+        description: Gera o Prisma Client do backend antes de executar a task.
+        required: false
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: Timeout do job em minutos.
+        required: false
+        type: number
+        default: 10
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: ${{ inputs.task }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        if: ${{ inputs.generate-prisma-client }}
+        run: pnpm --prefix backend run prisma:generate
+
+      - name: Run task
+        run: pnpm ${{ inputs.task }}

@@ -118,7 +118,7 @@ export interface CreateServerOptions {
 
 export const createServer = (options: CreateServerOptions) => {
   const app = Fastify({
-    logger: createLogger(options.env.LOG_LEVEL),
+    loggerInstance: createLogger(options.env.LOG_LEVEL),
   });
 
   app.addHook('onRequest', async (request, reply) => {

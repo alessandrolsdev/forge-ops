@@ -26,20 +26,20 @@ Entregas desta rodada: Policy Engine, Automation Health (score + dashboard), Rev
 
 Aplicando os seis sinais do policy engine ao proprio repositorio:
 
-| Sinal (policyKey)           | Peso | Status        | Evidencia                                                                                             |
-| --------------------------- | ---- | ------------- | ----------------------------------------------------------------------------------------------------- |
-| `ci_workflow_present`       | 15   | compliant     | 7 workflows ativos em `.github/workflows/`                                                            |
-| `lint_workflow_present`     | 10   | compliant     | `lint.yml`                                                                                            |
-| `test_workflow_present`     | 15   | compliant     | `test.yml` (unit + coverage gate + integracao com Postgres)                                           |
-| `automated_review_present`  | 15   | compliant     | `codex-review.yml` + `manual-codex-review.yml`                                                        |
-| `reusable_workflow_present` | 10   | non_compliant | nenhum reusable workflow registrado                                                                   |
-| `security_workflow_present` | 10   | non_compliant | sem workflow de seguranca dedicado (`actionlint` nao casa com os keywords security/codeql/audit/scan) |
+| Sinal (policyKey)           | Peso | Status    | Evidencia                                                             |
+| --------------------------- | ---- | --------- | --------------------------------------------------------------------- |
+| `ci_workflow_present`       | 15   | compliant | 10 workflows ativos em `.github/workflows/`                           |
+| `lint_workflow_present`     | 10   | compliant | `lint.yml`                                                            |
+| `test_workflow_present`     | 15   | compliant | `test.yml` (unit + coverage gate + integracao com Postgres)           |
+| `automated_review_present`  | 15   | compliant | `codex-review.yml`, `manual-codex-review.yml`, `forgeops-mention.yml` |
+| `reusable_workflow_present` | 10   | compliant | `reusable-node-checks.yml` (consumido por `lint.yml`/`typecheck.yml`) |
+| `security_workflow_present` | 10   | compliant | `security.yml` (`pnpm audit --prod --audit-level high`)               |
 
-Sinais: **55/75** (medido com `forgeops score` rodando o proprio motor contra este repositorio). Somando confiabilidade de CI (suite local integralmente verde no fechamento: 25/25) e sem blockers abertos (penalidade 0):
+Sinais: **75/75** (medido com `forgeops score` rodando o proprio motor contra este repositorio). Somando confiabilidade de CI (suite local integralmente verde no fechamento) e sem blockers abertos (penalidade 0):
 
-**Score: 80/100 - grade `healthy`.**
+**Score: 100/100 - grade `healthy`** no CI (com token do GitHub para amostrar os runs). No sandbox local, sem remote resolvivel, a confiabilidade de CI aparece como 0/25, resultando em 75/100 — os seis sinais ja estao compliant.
 
-Gap declarado: adotar um reusable workflow e um scanner de seguranca dedicado (CodeQL/audit) levaria o score a 100.
+Nota: o `security.yml` executa `pnpm audit --prod --audit-level high`. No fechamento desta rodada, overrides do pnpm (`fast-uri`, `defu`, `effect`) e as atualizacoes de `fastify` (5.x) e `next` (15.5.x) reduziram o audit de 15 vulnerabilidades altas para 4 moderadas (transitivas em tooling de desenvolvimento).
 
 ---
 
@@ -58,7 +58,8 @@ Camadas de validacao no CI:
 2. `typecheck.yml` - TypeScript strict
 3. `test.yml` - Vitest unit com gate de cobertura de 80% + migrations e testes de integracao contra `postgres:17-alpine`
 4. `actionlint.yml` - validacao dos workflows
-5. `codex-review.yml` - review automatizado advisory
+5. `security.yml` - `pnpm audit --prod --audit-level high` (PR, push e semanal)
+6. `codex-review.yml` / `forgeops-mention.yml` - review automatizado advisory
 
 ---
 

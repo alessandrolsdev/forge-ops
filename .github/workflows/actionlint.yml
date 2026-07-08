@@ -32,4 +32,4 @@ jobs:
         uses: reviewdog/action-actionlint@a40b7d35e62844ec9c0096ff3f5ff48579c90759
         with:
           fail_level: error
-          actionlint_flags: "-color"
+          actionlint_flags: '-color'

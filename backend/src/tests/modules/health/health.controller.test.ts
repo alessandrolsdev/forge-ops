@@ -31,7 +31,7 @@ describe('registerHealthRoutes', () => {
     };
 
     const app = Fastify({
-      logger: createLogger('silent'),
+      loggerInstance: createLogger('silent'),
     });
 
     app.setErrorHandler(createErrorHandler(app.log));
@@ -60,7 +60,7 @@ describe('registerHealthRoutes', () => {
     };
 
     const app = Fastify({
-      logger: createLogger('silent'),
+      loggerInstance: createLogger('silent'),
     });
 
     app.setErrorHandler(createErrorHandler(app.log));
